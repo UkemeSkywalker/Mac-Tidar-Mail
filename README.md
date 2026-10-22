@@ -2,6 +2,14 @@
 
 Frontend-only Mac Tidar Mail product demo and marketing homepage.
 
+## Product preview
+
+![Mac Tidar Mail inbox interface](public/images/mail-inbox-preview.svg)
+
+![Mac Tidar Mail editorial experience](public/assets/hero-editorial.png)
+
+The inbox preview mirrors the working demo’s forest, mint, linen, and charcoal design system. The demo includes realistic local mail data, folders, labels, search, compose, and browser-local persistence.
+
 ## Stack
 
 - Next.js App Router + TypeScript

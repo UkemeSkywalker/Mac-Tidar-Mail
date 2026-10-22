@@ -1,0 +1,35 @@
+<svg width="1440" height="900" viewBox="0 0 1440 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1440" height="900" rx="32" fill="#F8F8F4"/>
+  <rect x="36" y="36" width="1368" height="828" rx="22" fill="#FFFFFF" stroke="#DFE3DA" stroke-width="2"/>
+  <path d="M58 58H312V842H58C45.85 842 36 832.15 36 820V80C36 67.85 45.85 58 58 58Z" fill="#F3F5EF"/>
+  <rect x="312" y="58" width="1092" height="76" fill="#FFFFFF"/>
+  <path d="M312 134H1404" stroke="#DFE3DA" stroke-width="2"/>
+  <rect x="68" y="88" width="34" height="34" rx="10" fill="#216B4D"/>
+  <text x="85" y="111" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="19" font-weight="700">M</text>
+  <text x="116" y="108" fill="#161914" font-family="Arial, sans-serif" font-size="19" font-weight="700">Mac Tidar Mail</text>
+  <rect x="66" y="154" width="214" height="48" rx="11" fill="#161914"/>
+  <text x="173" y="184" text-anchor="middle" fill="#FFFFFF" font-family="Arial, sans-serif" font-size="15" font-weight="700">✎  Compose</text>
+  <rect x="58" y="222" width="232" height="42" rx="9" fill="#DCEEE4"/>
+  <text x="80" y="248" fill="#216B4D" font-family="Arial, sans-serif" font-size="15" font-weight="700">▣  Inbox</text>
+  <text x="257" y="248" text-anchor="end" fill="#216B4D" font-family="Arial, sans-serif" font-size="13" font-weight="700">12</text>
+  <g fill="#74776F" font-family="Arial, sans-serif" font-size="14"><text x="80" y="304">☆  Starred</text><text x="80" y="348">◷  Snoozed</text><text x="80" y="392">↗  Sent</text><text x="80" y="436">◫  Drafts</text><text x="80" y="480">▱  Archive</text><text x="80" y="524">!  Spam</text><text x="80" y="568">♲  Trash</text></g>
+  <text x="80" y="632" fill="#74776F" font-family="Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="1.3">LABELS</text>
+  <circle cx="82" cy="666" r="5" fill="#9A6BCE"/><text x="97" y="671" fill="#74776F" font-family="Arial, sans-serif" font-size="14">Design</text>
+  <circle cx="82" cy="704" r="5" fill="#3B82C4"/><text x="97" y="709" fill="#74776F" font-family="Arial, sans-serif" font-size="14">Engineering</text>
+  <circle cx="82" cy="742" r="5" fill="#3A9B7D"/><text x="97" y="747" fill="#74776F" font-family="Arial, sans-serif" font-size="14">Personal</text>
+  <rect x="350" y="80" width="570" height="34" rx="9" fill="#F3F4F1"/>
+  <circle cx="375" cy="97" r="8" stroke="#74776F" stroke-width="2"/><path d="M381 103L387 109" stroke="#74776F" stroke-width="2" stroke-linecap="round"/>
+  <text x="401" y="102" fill="#8A8D86" font-family="Arial, sans-serif" font-size="14">Search mail</text>
+  <circle cx="1343" cy="97" r="17" fill="#DDC79E"/><text x="1343" y="102" text-anchor="middle" fill="#513F1D" font-family="Arial, sans-serif" font-size="11" font-weight="700">UE</text>
+  <text x="350" y="174" fill="#74776F" font-family="Arial, sans-serif" font-size="14">☐</text><text x="390" y="174" fill="#74776F" font-family="Arial, sans-serif" font-size="14">↻</text>
+  <text x="1307" y="174" text-anchor="end" fill="#74776F" font-family="Arial, sans-serif" font-size="14">Newest⌄</text>
+  <g font-family="Arial, sans-serif"><rect x="336" y="198" width="1032" height="1" fill="#E3E5DF"/><circle cx="367" cy="237" r="8" stroke="#A6AAA2" stroke-width="2"/><text x="399" y="242" fill="#161914" font-size="15" font-weight="700">Amara Okafor</text><text x="600" y="242" fill="#161914" font-size="15" font-weight="700">Brand review: final routes</text><text x="840" y="242" fill="#74776F" font-size="14">— The revised visual routes are attached.</text><text x="1337" y="242" text-anchor="end" fill="#74776F" font-size="13">10:42</text>
+  <path d="M336 274H1368" stroke="#E3E5DF"/><circle cx="367" cy="311" r="8" stroke="#A6AAA2" stroke-width="2"/><text x="399" y="316" fill="#161914" font-size="15" font-weight="700">GitHub</text><text x="600" y="316" fill="#161914" font-size="15" font-weight="700">Fix keyboard navigation focus trap</text><text x="930" y="316" fill="#74776F" font-size="14">— 3 commits pushed to your branch.</text><text x="1337" y="316" text-anchor="end" fill="#74776F" font-size="13">09:16</text>
+  <path d="M336 348H1368" stroke="#E3E5DF"/><circle cx="367" cy="385" r="8" stroke="#A6AAA2" stroke-width="2"/><text x="399" y="390" fill="#161914" font-size="15" font-weight="700">Jordan Lee</text><text x="600" y="390" fill="#161914" font-size="15" font-weight="700">Tuesday product sync</text><text x="825" y="390" fill="#74776F" font-size="14">— I added an outline and the open decisions.</text><text x="1337" y="390" text-anchor="end" fill="#74776F" font-size="13">Yesterday</text>
+  <path d="M336 422H1368" stroke="#E3E5DF"/><circle cx="367" cy="459" r="8" stroke="#A6AAA2" stroke-width="2"/><text x="399" y="464" fill="#161914" font-size="15" font-weight="700">AWS</text><text x="600" y="464" fill="#161914" font-size="15" font-weight="700">October forecast available</text><rect x="861" y="447" width="54" height="22" rx="5" fill="#EDF1E9"/><text x="888" y="462" text-anchor="middle" fill="#587062" font-size="11">Cloud</text><text x="1337" y="464" text-anchor="end" fill="#74776F" font-size="13">Oct 21</text>
+  <path d="M336 496H1368" stroke="#E3E5DF"/><circle cx="367" cy="533" r="8" stroke="#A6AAA2" stroke-width="2"/><text x="399" y="538" fill="#161914" font-size="15" font-weight="700">Nadia Mensah</text><text x="600" y="538" fill="#161914" font-size="15" font-weight="700">A thoughtful introduction</text><text x="856" y="538" fill="#74776F" font-size="14">— Would love to compare notes next week.</text><text x="1337" y="538" text-anchor="end" fill="#74776F" font-size="13">Oct 20</text></g>
+  <rect x="1050" y="648" width="266" height="121" rx="14" fill="#216B4D"/>
+  <text x="1075" y="686" fill="#8CE2B5" font-family="Arial, sans-serif" font-size="12" font-weight="700" letter-spacing="1">MAC TIDAR MAIL</text>
+  <text x="1075" y="722" fill="white" font-family="Georgia, serif" font-size="26">A calmer inbox.</text>
+  <text x="1075" y="748" fill="#C7E6D2" font-family="Arial, sans-serif" font-size="13">Interactive frontend demo</text>
+</svg>
