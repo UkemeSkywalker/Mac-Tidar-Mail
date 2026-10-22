@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CSSProperties, ReactNode, useEffect, useState, useSyncExternalStore } from "react";
+import { CSSProperties, ReactNode, useEffect, useState } from "react";
+import { saveSkin, useSkin, type SkinKey } from "./skin-store";
 
 // Every account entry point opens the mail app; the demo reads ?mode= to show sign-in or sign-up.
 const APP_URL = "/app/";
@@ -37,7 +38,7 @@ function skinVars(p: Palette) {
   } as CSSProperties;
 }
 
-const skins: Record<string, Skin> = {
+const skins: Record<SkinKey, Skin> = {
   forest: { name: "Forest", note: "Organic bento", swatch: ["#216b4d", "#8ce2b5", "#081d15"] },
   botanical: { name: "Botanical", note: "Neo editorial", swatch: ["#35694b", "#c9e6ae", "#10261a"], palette: { forest: "#35694b", deep: "#1d3c29", night: "#10261a", mint: "#c9e6ae", linen: "#f7f6ed", border: "#dfe5d6" } },
   cobalt: { name: "Cobalt", note: "Midnight studio", swatch: ["#2543eb", "#b6c4ff", "#030712"], palette: { forest: "#2543eb", deep: "#152889", night: "#030712", mint: "#b6c4ff", linen: "#f8faff", border: "#dde4f7" } },
@@ -46,10 +47,6 @@ const skins: Record<string, Skin> = {
   editorial: { name: "Editorial", note: "Warm modern", swatch: ["#9a5149", "#f3c6b9", "#2a1716"], palette: { forest: "#9a5149", deep: "#5d2f2a", night: "#2a1716", mint: "#f3c6b9", linen: "#fcf8f5", border: "#eadcd6" } },
 };
 
-const SKIN_STORE = "mtm-skin"; const skinListeners = new Set<() => void>(); let memorySkin = "forest";
-function readSkin() { try { return localStorage.getItem(SKIN_STORE) || memorySkin; } catch { return memorySkin; } }
-function saveSkin(key: string) { memorySkin = key; try { localStorage.setItem(SKIN_STORE, key); } catch {} skinListeners.forEach(cb => cb()); }
-function subscribeSkin(cb: () => void) { skinListeners.add(cb); window.addEventListener("storage", cb); return () => { skinListeners.delete(cb); window.removeEventListener("storage", cb); }; }
 
 const navLinks = [["#features", "Bento Suite"], ["#workspace", "Workspace"], ["#ecosystem", "Ecosystem"], ["#philosophy", "Values"], ["#faqs", "FAQs"]];
 
@@ -78,7 +75,7 @@ function Check({ tone = "forest" }: { tone?: "forest" | "mint" }) {
   return <span className={`w-4 h-4 rounded-full ${colors} flex items-center justify-center text-[10px] font-bold`}>✓</span>;
 }
 
-function SkinPicker({ skinKey }: { skinKey: string }) {
+function SkinPicker({ skinKey }: { skinKey: SkinKey }) {
   const [open, setOpen] = useState(false);
   const current = skins[skinKey] || skins.forest;
   useEffect(() => {
@@ -96,7 +93,7 @@ function SkinPicker({ skinKey }: { skinKey: string }) {
         <div className="absolute right-0 mt-3 w-56 bg-white rounded-2xl p-2 border border-linen-border shadow-xl z-50">
           <small className="block px-2 pt-1 pb-2 text-[10px] font-bold uppercase tracking-wider text-stone-500">Interface skin</small>
           {Object.entries(skins).map(([key, skin]) => (
-            <button key={key} onClick={() => { saveSkin(key); setOpen(false); }} className={`w-full flex items-center gap-3 px-2 py-2 rounded-xl text-left hover:bg-linen-subtle ${key === skinKey ? "bg-linen-subtle" : ""}`}>
+            <button key={key} onClick={() => { saveSkin(key as SkinKey); setOpen(false); }} className={`w-full flex items-center gap-3 px-2 py-2 rounded-xl text-left hover:bg-linen-subtle ${key === skinKey ? "bg-linen-subtle" : ""}`}>
               <i className="w-4 h-4 rounded-full shrink-0" style={{ background: skin.swatch[0] }} />
               <span className="flex-1 leading-tight"><b className="block text-xs text-forest-night">{skin.name}</b><em className="not-italic text-[10px] text-stone-500">{skin.note}</em></span>
               <strong className="text-xs text-forest">{key === skinKey ? "✓" : ""}</strong>
@@ -111,7 +108,7 @@ function SkinPicker({ skinKey }: { skinKey: string }) {
 export function MarketingHome() {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
-  const skinKey = useSyncExternalStore(subscribeSkin, readSkin, () => "forest");
+  const skinKey = useSkin();
   const palette = (skins[skinKey] || skins.forest).palette;
 
   // The Get Started button advertises ↵: pressing Enter with nothing focused opens sign-up.
