@@ -1,0 +1,1043 @@
+<!DOCTYPE html>
+
+<html class="scroll-smooth" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Mac Tidar Mail — Your inbox. Your space. A better way to connect.</title>
+<meta content="Meet email that feels refreshingly simple. Built for speed, deep focus, and elegant teamwork across the Mac Tidar Suite." name="description"/>
+<!-- Fonts: Geist & Inter for high-craft studio typography -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800&amp;family=Inter:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS v3 CDN with forms and container queries -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#3525cd',
+            'primary-container': '#4f46e5',
+            brand: {
+              50: '#f5f4ff',
+              100: '#ece9fe',
+              200: '#d9d4fd',
+              300: '#bfb5fb',
+              400: '#9b8cf7',
+              500: '#755df0',
+              600: '#4f46e5',
+              700: '#3525cd',
+              800: '#2c1fa8',
+              900: '#1b1368',
+              950: '#0c0738',
+            },
+            amberWood: {
+              50: '#fbf7ee',
+              100: '#f5ecda',
+              200: '#ebdab6',
+              300: '#dfc28b',
+              400: '#d2a660',
+              500: '#b88339',
+              600: '#97642c',
+              700: '#794b26',
+              800: '#643d24',
+              900: '#392112',
+            },
+            slateDark: '#080c14',
+            panelDark: '#0d131f',
+            charcoal: '#111724',
+            surface: '#fbfaf8',
+          },
+          fontFamily: {
+            sans: ['"Geist"', '"Inter"', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+            body: ['"Inter"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          boxShadow: {
+            'glow': '0 0 50px -10px rgba(79, 70, 229, 0.25)',
+            'glow-amber': '0 0 60px -15px rgba(210, 166, 96, 0.22)',
+            'card': '0 20px 40px -15px rgba(15, 23, 42, 0.08), 0 0 1px 1px rgba(15, 23, 42, 0.05)',
+            'elevated': '0 30px 60px -12px rgba(8, 12, 20, 0.25)',
+          }
+        }
+      }
+    }
+  </script>
+<!-- Custom Micro-Styles -->
+<style data-purpose="custom-enhancements">
+    .bg-grid-pattern {
+      background-size: 36px 36px;
+      background-image: radial-gradient(circle, rgba(79, 70, 229, 0.07) 1px, transparent 1px);
+    }
+    .bg-grid-dark {
+      background-size: 40px 40px;
+      background-image: radial-gradient(circle, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+    }
+    details > summary::-webkit-details-marker {
+      display: none;
+    }
+    details[open] summary svg.chevron-icon {
+      transform: rotate(180deg);
+    }
+    .glass-panel {
+      background: rgba(255, 255, 255, 0.88);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+    .glass-dark {
+      background: rgba(13, 19, 31, 0.85);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+    .timber-border {
+      border-color: rgba(210, 166, 96, 0.3);
+    }
+  </style>
+</head>
+<body class="bg-[#fbfaf8] text-slate-800 antialiased font-sans selection:bg-brand-600 selection:text-white">
+<!-- BEGIN: Sticky Navigation -->
+<header class="sticky top-0 z-50 w-full border-b border-amber-900/10 glass-panel transition-all">
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+<!-- Brand Logo -->
+<a aria-label="Mac Tidar Mail Homepage" class="flex items-center gap-3.5 group" href="#">
+<div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-700 via-primary to-indigo-500 p-[1px] shadow-sm flex items-center justify-center text-white font-bold transition-transform group-hover:scale-105">
+<svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" viewbox="0 0 24 24">
+<rect height="16" rx="3" width="20" x="2" y="4"></rect>
+<path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path>
+</svg>
+</div>
+<div class="flex items-center gap-2">
+<span class="text-lg font-bold tracking-tight text-slate-900 group-hover:text-primary transition-colors">Mac Tidar Mail</span>
+<span class="text-[10px] font-bold uppercase tracking-wider bg-amberWood-100 text-amberWood-900 px-2 py-0.5 rounded-full border border-amberWood-300/50">Studio Edition</span>
+</div>
+</a>
+<!-- Desktop Nav Links -->
+<nav class="hidden md:flex items-center gap-8 text-sm font-medium text-slate-600">
+<a class="hover:text-primary transition-colors" href="#features">Features</a>
+<a class="hover:text-primary transition-colors" href="#experience">Experience</a>
+<a class="hover:text-primary transition-colors" href="#ecosystem">Ecosystem</a>
+<a class="hover:text-primary transition-colors" href="#why-mac-tidar">Why Mac Tidar</a>
+<a class="hover:text-primary transition-colors" href="#faqs">FAQs</a>
+</nav>
+<!-- Action CTAs -->
+<div class="hidden md:flex items-center gap-4">
+<a class="text-sm font-semibold text-slate-700 hover:text-slate-900 px-3 py-2 rounded-lg hover:bg-amberWood-100/60 transition-colors" href="https://mail.mactidar.com">
+          Sign In
+        </a>
+<a class="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full bg-primary hover:bg-brand-700 active:bg-brand-800 text-white text-sm font-semibold shadow-sm hover:shadow-md transition-all" href="#get-started">
+<span>Get Started</span>
+<kbd class="hidden lg:inline-block px-1.5 py-0.5 text-[11px] font-mono bg-indigo-950/40 text-brand-100 rounded">↵</kbd>
+</a>
+</div>
+<!-- Mobile Menu Button -->
+<button aria-label="Toggle navigation menu" class="md:hidden p-2 text-slate-700 rounded-lg hover:bg-slate-100 focus:outline-none" id="mobileMenuBtn">
+<svg class="w-6 h-6" fill="none" id="menuIcon" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24">
+<path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round" stroke-linejoin="round"></path>
+</svg>
+</button>
+</div>
+<!-- Mobile Nav Drawer -->
+<div class="hidden md:hidden border-t border-slate-200 bg-white px-4 pt-3 pb-6 space-y-3" id="mobileMenu">
+<a class="block py-2 text-base font-medium text-slate-700 hover:text-primary" href="#features">Features</a>
+<a class="block py-2 text-base font-medium text-slate-700 hover:text-primary" href="#experience">Experience</a>
+<a class="block py-2 text-base font-medium text-slate-700 hover:text-primary" href="#ecosystem">Ecosystem</a>
+<a class="block py-2 text-base font-medium text-slate-700 hover:text-primary" href="#why-mac-tidar">Why Mac Tidar</a>
+<a class="block py-2 text-base font-medium text-slate-700 hover:text-primary" href="#faqs">FAQs</a>
+<div class="pt-4 border-t border-slate-100 flex flex-col gap-3">
+<a class="text-center py-2.5 rounded-lg border border-slate-200 font-semibold text-slate-800" href="https://mail.mactidar.com">Sign In</a>
+<a class="text-center py-2.5 rounded-lg bg-primary text-white font-semibold" href="#get-started">Get Started</a>
+</div>
+</div>
+</header>
+<!-- END: Sticky Navigation -->
+<!-- BEGIN: Hero Section (Modern Studio & High-Craft with DATA:IMAGE:IMAGE_2) -->
+<section class="relative overflow-hidden pt-10 pb-20 lg:pt-16 lg:pb-28 bg-gradient-to-b from-[#f5f0e8]/60 via-[#fbfaf8] to-white border-b border-amber-900/10">
+<!-- Warm ambient aura -->
+<div class="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[850px] h-[550px] bg-gradient-to-tr from-amber-200/25 via-indigo-100/30 to-amber-100/20 rounded-full blur-3xl pointer-events-none -z-10"></div>
+<div class="absolute inset-0 bg-grid-pattern opacity-40 -z-10"></div>
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+<!-- Top Hero Copy Stack -->
+<div class="max-w-3xl mb-12 space-y-6">
+<div class="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-white/90 border border-amberWood-200 shadow-sm text-xs font-semibold text-slate-700 backdrop-blur-sm">
+<span class="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+<span class="text-primary font-bold">Mac Tidar Mail 2.14</span>
+<span class="text-amberWood-300">•</span>
+<span class="text-slate-600">Ultra-fast pgvector search</span>
+<svg class="w-3.5 h-3.5 text-amberWood-600" fill="currentColor" viewbox="0 0 20 20">
+<path clip-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" fill-rule="evenodd"></path>
+</svg>
+</div>
+<h1 class="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-900 leading-[1.08]">
+  Your inbox. <br/>
+  Your space. <br/>
+<span class="bg-gradient-to-r from-primary via-indigo-600 to-amber-700 bg-clip-text text-transparent">A better way to connect.</span>
+</h1>
+<p class="text-lg sm:text-xl text-slate-600 max-w-2xl leading-relaxed font-body">
+  Meet email that feels refreshingly simple. Built for speed, deep focus, and elegant teamwork across the Mac Tidar Suite with sub-40ms latency and end-to-end encrypted threads.
+</p>
+<!-- CTA Actions -->
+<div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 pt-2">
+<a class="inline-flex items-center justify-center gap-3 px-7 py-3.5 rounded-xl bg-primary hover:bg-brand-700 active:bg-brand-800 text-white font-semibold text-base shadow-lg shadow-primary/20 transition-all transform hover:-translate-y-0.5" href="#get-started">
+<span>Get Started</span>
+<kbd class="px-2 py-0.5 text-xs font-mono bg-indigo-950/40 text-brand-100 rounded">↵</kbd>
+</a>
+<a class="inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl bg-white hover:bg-amberWood-50/70 border border-slate-200 text-slate-700 font-semibold text-base shadow-sm hover:border-amberWood-300 transition-all" href="#experience">
+<svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewbox="0 0 24 24">
+<circle cx="12" cy="12" r="10"></circle>
+<polygon fill="currentColor" points="10 8 16 12 10 16 10 8"></polygon>
+</svg>
+<span>Explore Mac Tidar Mail</span>
+</a>
+</div>
+</div>
+<!-- Hero Editorial Split: Photography IMAGE_2 + Live UI Metric Overlay Cards -->
+<div class="relative rounded-3xl overflow-hidden border border-amberWood-200/80 shadow-elevated bg-slate-900">
+<div class="relative aspect-[16/8] sm:aspect-[21/9] w-full overflow-hidden">
+<img alt="Collaborative duo at a rich timber studio desk in warm natural morning sunlight" class="w-full h-full object-cover object-center" loading="eager" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD691_5TynAUoxdN0Wc4jT3ZMqIdPS30aFnyoaZvcyq4F4cuxvMCDr4YKpcZlJ8ErTCpMAiwKKr4acVLBZizNOR2-IK1gtPDIfatiWUq_IhY7q8BQ4O4MTDMVBNHAvJoFuCWyZY0tSJRfNE40H49sK6pAugZUt9kZwE1uKru9weLcBR2m_FQ1Ao1BicqVA_Z1091eKfAG95kNVYw2-R-6G5EKVJF8AjxT-EJ3iO5Hf1MWb6xRSCYVaQctFKjhd-WTjA-pQ"/>
+<!-- Studio Warm Vignette Overlay -->
+<div class="absolute inset-0 bg-gradient-to-t from-slateDark/90 via-slateDark/30 to-transparent"></div>
+<div class="absolute inset-0 bg-gradient-to-r from-slateDark/60 via-transparent to-slateDark/40"></div>
+</div>
+<!-- Bottom Floating Studio HUD: Live Thread + Real Metrics in timber/obsidian balance -->
+<div class="absolute bottom-4 left-4 right-4 sm:bottom-6 sm:left-6 sm:right-6 grid grid-cols-1 md:grid-cols-12 gap-3 sm:gap-4 items-end">
+<!-- Live Notification Capsule -->
+<div class="md:col-span-6 bg-slateDark/90 backdrop-blur-xl rounded-2xl p-4 border border-amberWood-500/30 text-white shadow-2xl">
+<div class="flex items-center justify-between pb-2.5 border-b border-white/10">
+<div class="flex items-center gap-2.5">
+<div class="w-8 h-8 rounded-full bg-gradient-to-tr from-amber-600 to-primary text-white flex items-center justify-center font-bold text-xs shadow-inner">
+  ER
+</div>
+<div>
+<h4 class="text-xs font-bold text-white tracking-tight">Elena Rostova</h4>
+<p class="text-[11px] text-slate-400">VP Product • 10:42 AM</p>
+</div>
+</div>
+<span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-400/20 text-amber-300 border border-amber-400/40">
+  URGENT
+</span>
+</div>
+<div class="pt-2 flex items-center justify-between gap-2">
+<p class="text-xs font-medium text-slate-200 truncate">Q3 Product Roadmap: Multi-tenant Search</p>
+<span class="shrink-0 text-[11px] font-mono text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded">p95 &lt; 38ms</span>
+</div>
+</div>
+<!-- Metric Strip Overlay -->
+<div class="md:col-span-6 grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
+<div class="bg-slateDark/90 backdrop-blur-xl p-3 rounded-2xl border border-white/10 text-left">
+<span class="text-[10px] font-mono text-amberWood-300 uppercase tracking-wider block">Latency</span>
+<span class="text-lg font-bold text-white block mt-0.5">&lt; 38ms</span>
+<span class="text-[10px] text-emerald-400 font-medium">↘ 62% faster</span>
+</div>
+<div class="bg-slateDark/90 backdrop-blur-xl p-3 rounded-2xl border border-white/10 text-left">
+<span class="text-[10px] font-mono text-amberWood-300 uppercase tracking-wider block">Draft Sync</span>
+<span class="text-lg font-bold text-white block mt-0.5">Zero-Loss</span>
+<span class="text-[10px] text-brand-300">CRDT + Offline</span>
+</div>
+<div class="hidden sm:block bg-slateDark/90 backdrop-blur-xl p-3 rounded-2xl border border-white/10 text-left">
+<span class="text-[10px] font-mono text-amberWood-300 uppercase tracking-wider block">Security</span>
+<span class="text-lg font-bold text-white block mt-0.5">SOC-2</span>
+<span class="text-[10px] text-slate-400">Type II Verified</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Social Proof Strip -->
+<div class="mt-10 pt-6 border-t border-slate-200 flex flex-wrap items-center justify-between gap-4">
+<p class="text-xs uppercase tracking-wider font-semibold text-slate-500">
+  Trusted by founders and product teams across the Mac Tidar Suite
+</p>
+<div class="flex flex-wrap items-center gap-6 text-slate-600 font-semibold text-xs sm:text-sm">
+<div class="flex items-center gap-2">
+<svg class="w-4 h-4 text-primary" fill="currentColor" viewbox="0 0 20 20"><path clip-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" fill-rule="evenodd"></path></svg>
+<span>Zero-loss CRDT Drafts</span>
+</div>
+<div class="flex items-center gap-2">
+<svg class="w-4 h-4 text-primary" fill="currentColor" viewbox="0 0 20 20"><path clip-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" fill-rule="evenodd"></path></svg>
+<span>SOC-2 Type II Certified</span>
+</div>
+<div class="flex items-center gap-2">
+<svg class="w-4 h-4 text-primary" fill="currentColor" viewbox="0 0 20 20"><path clip-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" fill-rule="evenodd"></path></svg>
+<span>@mactidar.com Identity</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- END: Hero Section -->
+<!-- BEGIN: Full-Width Brand Statement Banner -->
+<section class="relative bg-slateDark text-white py-20 sm:py-28 overflow-hidden border-y border-white/10">
+<div class="absolute inset-0 bg-grid-dark opacity-25 pointer-events-none"></div>
+<div class="absolute -top-40 left-1/2 -translate-x-1/2 w-[800px] h-[350px] bg-primary/20 rounded-full blur-[130px] pointer-events-none"></div>
+<div class="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-6">
+<span class="inline-block text-xs font-mono font-semibold uppercase tracking-widest text-amberWood-300 bg-amberWood-900/40 border border-amberWood-700/50 px-3.5 py-1 rounded-full">
+  The Philosophy of Connection
+</span>
+<h2 class="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-white leading-tight">
+  Good communication makes <br class="hidden sm:inline"/>
+  everything possible.
+</h2>
+<p class="text-lg sm:text-2xl text-slate-300 max-w-3xl mx-auto font-light leading-relaxed">
+  From everyday conversations to your biggest ideas, Mac Tidar Mail gives every message a place to belong.
+</p>
+<div class="pt-6 flex flex-wrap justify-center items-center gap-6 sm:gap-10 text-slate-400 text-xs sm:text-sm font-medium">
+<span class="flex items-center gap-2">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+  No invasive trackers
+</span>
+<span class="flex items-center gap-2">
+<span class="w-1.5 h-1.5 rounded-full bg-amberWood-400"></span>
+  Zero algorithmic noise
+</span>
+<span class="flex items-center gap-2">
+<span class="w-1.5 h-1.5 rounded-full bg-brand-400"></span>
+  Pure human clarity
+</span>
+</div>
+</div>
+</section>
+<!-- END: Full-Width Brand Statement Banner -->
+<!-- BEGIN: Features Section (with DATA:IMAGE:IMAGE_3 in Feature A Focus Workspace) -->
+<section class="py-24 sm:py-32 bg-white" id="features">
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+<!-- Section Header -->
+<div class="text-center max-w-3xl mx-auto mb-20 space-y-4">
+<h2 class="text-xs uppercase tracking-widest font-bold text-primary">Pure Craftsmanship</h2>
+<p class="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">Everything you need. Nothing you don't.</p>
+<p class="text-slate-600 text-base sm:text-lg font-body">
+  Designed intentionally to replace cluttered email apps with speed, structure, and calm elegance.
+</p>
+</div>
+<div class="space-y-24">
+<!-- Feature A: Deep Work / Focus Workspace featuring DATA:IMAGE:IMAGE_3 paired with live triage UI -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
+<div class="lg:col-span-5 space-y-5">
+<div class="w-10 h-10 rounded-xl bg-amberWood-100 text-amberWood-800 flex items-center justify-center font-bold text-sm border border-amberWood-200">
+  01
+</div>
+<h3 class="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+  A workspace tailored for true focus.
+</h3>
+<p class="text-slate-600 leading-relaxed font-body">
+  Intelligent triage separating high-stakes peer messages from automated updates and newsletters. Built with quick archive keys, clean labels, and instant snoozing so zero-inbox is a daily reality.
+</p>
+<ul class="space-y-3 pt-2 text-sm text-slate-700 font-medium font-body">
+<li class="flex items-center gap-3">
+<span class="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs">✓</span>
+<span>Automatic categorization: Primary, Updates, Newsletters</span>
+</li>
+<li class="flex items-center gap-3">
+<span class="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs">✓</span>
+<span>One-tap snooze &amp; multi-thread archive velocity</span>
+</li>
+<li class="flex items-center gap-3">
+<span class="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs">✓</span>
+<span>Real-time unread badges that respect your peace</span>
+</li>
+</ul>
+</div>
+<!-- Studio Deep Work Visual Collage: Photography + Live Triage Mockup -->
+<div class="lg:col-span-7 space-y-4">
+<!-- Photography IMAGE_3 Frame -->
+<div class="rounded-2xl overflow-hidden border border-amberWood-200/90 shadow-md bg-amberWood-50 relative aspect-[16/8]">
+<img alt="Focused professional writing notes at a warm sunlit timber studio desk with open laptop" class="w-full h-full object-cover object-center" loading="lazy" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBxXRBKu8M8Q3qefKm237uhTdmU-yPE8M5cOhSlEyfA8-_NyIooPo6u01L8e1NzG6tabwmszLAGetPj2U9v-HAS66pXoX0MLVcPcqh1r0sia_W3sf6LxRqEP2-wmKMtRNdqzm9TrUcWu2DU-JysIpblzLzH3GodVCvqLhD_SX7XuX6TeGm3fOX7cvWeSnksuvdt4J5mog4M_Map7bmH2tnQYHKavN0r783-88imfagkMvq7R5Esrn3VtQER22iX6M-iOho"/>
+<div class="absolute inset-0 bg-gradient-to-t from-slateDark/70 via-transparent to-transparent"></div>
+<div class="absolute bottom-3 left-4 text-white text-xs font-mono flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+<span>Deep Focus Mode Active • Do Not Disturb</span>
+</div>
+</div>
+<!-- Embedded UI Thread Preview -->
+<div class="rounded-xl bg-slate-900 p-2 sm:p-3 shadow-lg border border-slate-800">
+<div class="bg-white rounded-lg overflow-hidden border border-slate-200 text-xs">
+<!-- Mock Header Bar -->
+<div class="bg-amberWood-50/50 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between text-xs">
+<div class="flex items-center gap-3">
+<span class="flex items-center gap-1.5 font-bold text-primary border-b-2 border-primary pb-0.5">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path></svg>
+    Primary <span class="bg-primary text-white rounded-full px-1.5 py-0.2 text-[10px]">12 new</span>
+</span>
+<span class="text-slate-500 font-medium pb-0.5 cursor-pointer hover:text-slate-800">Updates (GitHub, AWS)</span>
+<span class="text-slate-500 font-medium pb-0.5 cursor-pointer hover:text-slate-800 hidden sm:inline">Newsletters</span>
+</div>
+<span class="font-mono text-slate-400 text-[11px]">1–50 of 248</span>
+</div>
+<!-- Mock Thread List -->
+<div class="divide-y divide-slate-100 bg-white">
+<div class="p-3 hover:bg-slate-50 flex items-center justify-between gap-3 bg-brand-50/30">
+<div class="flex items-center gap-3 truncate">
+<span class="w-2 h-2 rounded-full bg-primary shrink-0"></span>
+<span class="font-bold text-slate-900 w-32 truncate">Elena Rostova</span>
+<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-indigo-100 text-indigo-800">Product</span>
+<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700">URGENT</span>
+<span class="text-slate-700 truncate font-semibold">Q3 Product Roadmap: Multi-tenant Latency</span>
+</div>
+<span class="text-slate-400 font-mono shrink-0 text-[11px]">10:42 AM</span>
+</div>
+<div class="p-3 hover:bg-slate-50 flex items-center justify-between gap-3">
+<div class="flex items-center gap-3 truncate">
+<span class="w-2 h-2 rounded-full bg-primary shrink-0"></span>
+<span class="font-bold text-slate-900 w-32 truncate">AWS Cloud Alerts</span>
+<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800">Engineering</span>
+<span class="text-slate-600 truncate">[Production Alert] AWS Amplify build succeeded for mail.mactidar.com</span>
+</div>
+<span class="text-slate-400 font-mono shrink-0 text-[11px]">9:15 AM</span>
+</div>
+<div class="p-3 hover:bg-slate-50 flex items-center justify-between gap-3">
+<div class="flex items-center gap-3 truncate">
+<span class="w-2 h-2 rounded-full bg-transparent shrink-0"></span>
+<span class="font-medium text-slate-700 w-32 truncate">Tariq Al-Mansoor</span>
+<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-amberWood-100 text-amberWood-800">Investors</span>
+<span class="text-slate-500 truncate">Follow-up: Mac Tidar Series A allocation &amp; term sheet syndicate</span>
+</div>
+<span class="text-slate-400 font-mono shrink-0 text-[11px]">Yesterday</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Feature B: Deep Conversation Organization -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
+<div class="lg:col-span-7 order-2 lg:order-1 rounded-2xl bg-white p-6 shadow-card border border-slate-200">
+<div class="space-y-4">
+<div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
+<span class="text-xs font-mono text-slate-500">Thread ID: #MTR-9042 • End-to-end encrypted</span>
+<span class="text-xs font-semibold px-2 py-1 rounded bg-brand-50 text-primary">3 messages</span>
+</div>
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+<div class="p-3.5 rounded-xl bg-brand-50/70 border border-brand-100 text-left">
+<span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">p95 Search Latency</span>
+<span class="text-2xl font-extrabold text-primary block mt-1">&lt; 38ms</span>
+<span class="text-[11px] text-emerald-600 font-medium">↘ 62% decrease</span>
+</div>
+<div class="p-3.5 rounded-xl bg-amberWood-50/60 border border-amberWood-200 text-left">
+<span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Tenant Isolation</span>
+<span class="text-xl font-bold text-slate-800 block mt-1">RLS + Schema</span>
+<span class="text-[11px] text-amberWood-700">SOC-2 Type II compliant</span>
+</div>
+<div class="p-3.5 rounded-xl bg-indigo-50/50 border border-indigo-100 text-left">
+<span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Offline Sync</span>
+<span class="text-xl font-bold text-indigo-700 block mt-1">100% Zero-Loss</span>
+<span class="text-[11px] text-indigo-600">IndexedDB + CRDT</span>
+</div>
+</div>
+<div class="p-3 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between text-xs text-slate-700">
+<span class="font-semibold flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+  Multi-tenant Vector Ingestion Pipeline
+</span>
+<span class="font-mono text-slate-500">v3.2 Draft</span>
+</div>
+</div>
+</div>
+<div class="lg:col-span-5 order-1 lg:order-2 space-y-5">
+<div class="w-10 h-10 rounded-xl bg-amberWood-100 text-amberWood-800 flex items-center justify-center font-bold text-sm border border-amberWood-200">
+  02
+</div>
+<h3 class="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+  Conversations that stay organized.
+</h3>
+<p class="text-slate-600 leading-relaxed font-body">
+  No endless unraveling threads or broken reply chains. Mac Tidar Mail groups related documents, latency benchmarks, and architectural decisions into crystal clear timeline records.
+</p>
+<div class="space-y-3 pt-2 text-sm text-slate-700 font-body">
+<div class="flex items-start gap-3">
+<div class="w-6 h-6 rounded bg-primary/10 text-primary flex items-center justify-center shrink-0 mt-0.5 text-xs font-bold font-mono">RLS</div>
+<p>Strict row-level security per organization partition, guaranteeing zero cross-tenant leakage.</p>
+</div>
+<div class="flex items-start gap-3">
+<div class="w-6 h-6 rounded bg-primary/10 text-primary flex items-center justify-center shrink-0 mt-0.5 text-xs font-bold font-mono">CRDT</div>
+<p>Seamless offline drafts that never lose a single keystroke even when Wi-Fi drops completely.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Feature C: Keyboard First & Instant Search -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
+<div class="lg:col-span-5 space-y-5">
+<div class="w-10 h-10 rounded-xl bg-amberWood-100 text-amberWood-800 flex items-center justify-center font-bold text-sm border border-amberWood-200">
+  03
+</div>
+<h3 class="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+  Lightning fast search &amp; keyboard flow.
+</h3>
+<p class="text-slate-600 leading-relaxed font-body">
+  Never lift your fingers from the keyboard. Jump anywhere in under a second with <strong>⌘K</strong>, compose with <strong>C</strong>, navigate with <strong>J / K</strong>, and execute multi-actions at the speed of thought.
+</p>
+<div class="flex flex-wrap gap-2 pt-2">
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-slate-100 border border-slate-200 text-xs font-mono text-slate-700">
+<kbd class="font-bold">⌘ K</kbd> Search
+</span>
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-slate-100 border border-slate-200 text-xs font-mono text-slate-700">
+<kbd class="font-bold">C</kbd> Compose
+</span>
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-slate-100 border border-slate-200 text-xs font-mono text-slate-700">
+<kbd class="font-bold">E</kbd> Archive
+</span>
+<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-slate-100 border border-slate-200 text-xs font-mono text-slate-700">
+<kbd class="font-bold">#</kbd> Delete
+</span>
+</div>
+</div>
+<!-- Command Palette Mockup -->
+<div class="lg:col-span-7 bg-slateDark rounded-2xl p-6 shadow-2xl text-white border border-slate-800">
+<div class="flex items-center gap-3 pb-4 border-b border-slate-800 text-slate-300">
+<svg class="w-5 h-5 text-brand-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" x2="16.65" y1="21" y2="16.65"></line></svg>
+<input class="bg-transparent border-0 text-slate-200 focus:ring-0 p-0 text-sm w-full font-sans cursor-default" readonly="" type="text" value="Search messages, people, or labels (Press / to search)..."/>
+<kbd class="text-xs font-mono bg-slate-800 text-slate-400 px-2 py-0.5 rounded border border-slate-700">⌘K</kbd>
+</div>
+<div class="pt-4 space-y-2">
+<div class="flex items-center justify-between p-2.5 rounded-lg bg-primary/20 border border-primary/40 text-xs text-white">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-primary-container"></span>
+<span><strong>Elena Rostova</strong> — VP Product (Q3 Roadmap)</span>
+</div>
+<span class="text-brand-300 font-mono">Jump ↵</span>
+</div>
+<div class="flex items-center justify-between p-2.5 rounded-lg hover:bg-slate-800/60 text-xs text-slate-300 transition-colors">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-slate-600"></span>
+<span>Filter by label: <strong class="text-amberWood-300">#Engineering</strong></span>
+</div>
+<span class="text-slate-500 font-mono">8 threads</span>
+</div>
+<div class="flex items-center justify-between p-2.5 rounded-lg hover:bg-slate-800/60 text-xs text-slate-300 transition-colors">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-slate-600"></span>
+<span>Open Compose Window</span>
+</div>
+<span class="text-slate-500 font-mono">Key 'C'</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- END: Features Section -->
+<!-- BEGIN: Product Experience Showcase -->
+<section class="py-24 sm:py-32 bg-slateDark text-white relative overflow-hidden" id="experience">
+<div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[500px] bg-primary/10 rounded-full blur-[140px] pointer-events-none"></div>
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+<div class="text-center max-w-3xl mx-auto mb-16 space-y-4">
+<span class="text-xs font-mono font-semibold uppercase tracking-widest text-amberWood-300">Mac Tidar Mail Desktop</span>
+<h2 class="text-3xl sm:text-5xl font-extrabold text-white tracking-tight">The Modern Inbox Environment</h2>
+<p class="text-slate-400 text-base sm:text-lg font-body">
+  Zero clutter, instant vector search, and unified team identity under a single elegant roof.
+</p>
+</div>
+<!-- Realistic Desktop Workspace Container -->
+<div class="relative rounded-2xl bg-charcoal border border-slate-700/80 shadow-2xl p-3 sm:p-5 overflow-hidden">
+<!-- Window Controls & Status Bar -->
+<div class="flex items-center justify-between pb-4 border-b border-slate-800 text-xs">
+<div class="flex items-center gap-2">
+<span class="w-3 h-3 rounded-full bg-rose-500/80 inline-block"></span>
+<span class="w-3 h-3 rounded-full bg-amber-500/80 inline-block"></span>
+<span class="w-3 h-3 rounded-full bg-emerald-500/80 inline-block"></span>
+<span class="ml-3 text-slate-400 font-mono text-[11px]">Inbox — Mac Tidar Mail (mail.mactidar.com)</span>
+</div>
+<div class="flex items-center gap-3 font-mono text-[11px] text-slate-400">
+<span class="inline-flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+Cluster: v2.14.0 Production
+</span>
+</div>
+</div>
+<!-- Screenshot UI Representation -->
+<div class="mt-4 rounded-xl overflow-hidden border border-slate-800 relative bg-[#090d16]">
+<div class="grid grid-cols-1 md:grid-cols-12 min-h-[500px]">
+<!-- Left Sidebar -->
+<div class="hidden md:block md:col-span-3 bg-slate-950 p-4 border-r border-slate-800/80 space-y-6">
+<button class="w-full py-2.5 px-4 bg-primary hover:bg-brand-600 text-white rounded-xl font-semibold text-xs flex items-center justify-between shadow-sm transition-all">
+<span class="flex items-center gap-2">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M12 4v16m8-8H4"></path></svg>
+New Message
+</span>
+<kbd class="text-[10px] bg-indigo-950/60 px-1.5 py-0.5 rounded text-brand-100 font-mono">C</kbd>
+</button>
+<!-- Mailboxes Links -->
+<div class="space-y-1 text-xs">
+<span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-2">Mailboxes</span>
+<a class="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-primary/20 text-brand-200 font-semibold" href="#">
+<span class="flex items-center gap-2">
+<svg class="w-4 h-4 text-brand-400" fill="none" stroke="currentColor" viewbox="0 0 24 24"><rect height="16" rx="2" width="20" x="2" y="4"></rect></svg>
+Inbox
+</span>
+<span class="bg-primary text-white text-[10px] px-1.5 py-0.2 rounded-full font-bold">14</span>
+</a>
+<a class="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200" href="#">
+<span class="flex items-center gap-2">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+Starred
+</span>
+<span class="text-slate-500">4</span>
+</a>
+<a class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200" href="#">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+Snoozed
+</a>
+<a class="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200" href="#">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><line x1="22" x2="11" y1="2" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+Sent
+</a>
+<a class="flex items-center justify-between px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200" href="#">
+<span class="flex items-center gap-2">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path></svg>
+Drafts
+</span>
+<span class="text-brand-400">2</span>
+</a>
+</div>
+<!-- Labels -->
+<div class="space-y-1.5 text-xs pt-4 border-t border-slate-800">
+<span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-2">Labels</span>
+<div class="flex items-center justify-between px-2 text-slate-400">
+<span class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> Engineering</span>
+<span class="text-slate-500 text-[10px]">8</span>
+</div>
+<div class="flex items-center justify-between px-2 text-slate-400">
+<span class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-indigo-500"></span> Product</span>
+<span class="text-slate-500 text-[10px]">3</span>
+</div>
+<div class="flex items-center justify-between px-2 text-slate-400">
+<span class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-amberWood-400"></span> Investors</span>
+<span class="text-slate-500 text-[10px]">-</span>
+</div>
+<div class="flex items-center justify-between px-2 text-slate-400">
+<span class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-purple-500"></span> Design</span>
+<span class="text-slate-500 text-[10px]">5</span>
+</div>
+</div>
+<!-- Storage -->
+<div class="pt-6 border-t border-slate-800 text-[11px] text-slate-400 space-y-1">
+<div class="flex justify-between">
+<span>Storage</span>
+<span class="font-mono">4.2 GB / 15 GB</span>
+</div>
+<div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+<div class="bg-primary h-full w-[28%] rounded-full"></div>
+</div>
+</div>
+</div>
+<!-- Main Canvas -->
+<div class="col-span-12 md:col-span-9 bg-slate-900/90 p-4 sm:p-6 flex flex-col justify-between relative">
+<div class="bg-slate-950/80 border border-slate-800 rounded-xl px-4 py-2.5 flex items-center justify-between text-xs text-slate-400">
+<div class="flex items-center gap-2.5 w-full">
+<svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewbox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" x2="16.65" y1="21" y2="16.65"></line></svg>
+<span class="text-slate-400 truncate">Search messages, people, or labels (Press / to search)...</span>
+</div>
+<div class="flex items-center gap-2">
+<kbd class="font-mono text-[10px] bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">⌘K</kbd>
+<div class="w-6 h-6 rounded-full bg-slate-700 text-[10px] flex items-center justify-center font-bold text-slate-200">UE</div>
+</div>
+</div>
+<!-- Floating Compose Box -->
+<div class="my-6 max-w-lg mx-auto w-full bg-slate-950 border border-slate-700/80 rounded-xl shadow-2xl p-4 space-y-3 z-10">
+<div class="flex items-center justify-between pb-2 border-b border-slate-800 text-xs">
+<span class="font-semibold text-slate-300 flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+New Message - Draft
+</span>
+<div class="flex items-center gap-2 text-slate-500">
+<span>—</span>
+<span>⤢</span>
+<span>✕</span>
+</div>
+</div>
+<div class="text-xs space-y-1.5">
+<div class="flex items-center text-slate-400 gap-2">
+<span class="w-10 text-slate-500">To:</span>
+<span class="bg-slate-800 text-slate-200 px-2 py-0.5 rounded font-mono text-[11px]">elena@mactidar.com</span>
+</div>
+<div class="flex items-center text-slate-400 gap-2">
+<span class="w-10 text-slate-500">Subj:</span>
+<span class="text-slate-200 font-semibold">Re: Q3 Product Roadmap Feedback</span>
+</div>
+</div>
+<p class="text-xs text-slate-300 font-mono leading-relaxed pt-1">
+Hi Elena, <br/><br/>
+Latency reduction benchmarks look extremely solid. Let's greenlight the vector cache indexer before Thursday's sprint.
+</p>
+<div class="pt-2 flex items-center justify-between border-t border-slate-800/80">
+<div class="flex items-center gap-2 text-slate-400 text-xs font-mono">
+<span class="px-1.5 py-0.5 hover:bg-slate-800 rounded cursor-pointer">B</span>
+<span class="px-1.5 py-0.5 hover:bg-slate-800 rounded cursor-pointer italic">I</span>
+<span class="px-1.5 py-0.5 hover:bg-slate-800 rounded cursor-pointer">🔗</span>
+<span class="px-1.5 py-0.5 hover:bg-slate-800 rounded cursor-pointer">📎</span>
+</div>
+<button class="bg-primary hover:bg-brand-600 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5">
+<span>Send</span>
+<svg class="w-3 h-3" fill="none" stroke="currentColor" viewbox="0 0 24 24"><line x1="22" x2="11" y1="2" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+</button>
+</div>
+</div>
+<!-- Bottom Status -->
+<div class="bg-slate-950/60 border border-slate-800 rounded-xl p-3 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+<div class="flex items-center gap-2.5">
+<span class="w-7 h-7 rounded-lg bg-primary/20 text-brand-300 flex items-center justify-center font-bold">✓</span>
+<div>
+<h5 class="font-bold text-slate-200">Inbox Zero Progress</h5>
+<p class="text-[11px] text-slate-400">You responded to 18 priority communications today.</p>
+</div>
+</div>
+<div class="flex items-center gap-3 font-mono text-[11px] text-slate-400">
+<span><kbd class="text-slate-300">C</kbd> Compose</span>
+<span><kbd class="text-slate-300">J / K</kbd> Navigate</span>
+<span><kbd class="text-slate-300">E</kbd> Archive</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- END: Product Experience Showcase -->
+<!-- BEGIN: The Mac Tidar Ecosystem -->
+<section class="py-24 sm:py-32 bg-[#f4eee4]/50 border-b border-amber-900/10" id="ecosystem">
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+<div class="text-center max-w-3xl mx-auto mb-16 space-y-4">
+<span class="text-xs uppercase tracking-widest font-bold text-primary">Unified Architecture</span>
+<h2 class="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">One account. More possibilities.</h2>
+<p class="text-slate-600 text-base sm:text-lg font-body">
+  Mac Tidar Mail is the communication backbone of a unified product suite designed for builders, creators, and modern teams.
+</p>
+</div>
+<!-- Ecosystem 3-Column Grid -->
+<div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+<!-- Card 1: Mail -->
+<div class="bg-white rounded-2xl p-8 border border-amberWood-200/80 shadow-card hover:border-primary/50 transition-all group">
+<div class="w-12 h-12 rounded-xl bg-amberWood-100 text-amberWood-900 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24">
+<rect height="16" rx="2" width="20" x="2" y="4"></rect>
+<path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path>
+</svg>
+</div>
+<div class="flex items-center justify-between mb-2">
+<h3 class="text-xl font-bold text-slate-900">Mac Tidar Mail</h3>
+<span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full bg-emerald-100 text-emerald-800">
+  Available Now
+</span>
+</div>
+<p class="text-slate-600 text-sm leading-relaxed mb-6 font-body">
+  Lightweight, rapid personal and business email with built-in instant search, tags, and encrypted storage.
+</p>
+<a class="text-sm font-semibold text-primary group-hover:text-brand-700 flex items-center gap-1.5" href="https://mail.mactidar.com">
+<span>Access web app</span>
+<span class="transition-transform group-hover:translate-x-1">→</span>
+</a>
+</div>
+<!-- Card 2: Cloud -->
+<div class="bg-white rounded-2xl p-8 border border-amberWood-200/80 shadow-card hover:border-primary/50 transition-all group">
+<div class="w-12 h-12 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24">
+<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path>
+</svg>
+</div>
+<div class="flex items-center justify-between mb-2">
+<h3 class="text-xl font-bold text-slate-900">Mac Tidar Cloud</h3>
+<span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full bg-slate-100 text-slate-700">
+  Connected
+</span>
+</div>
+<p class="text-slate-600 text-sm leading-relaxed mb-6 font-body">
+  Directly attach large roadmaps, specs, and design assets from Mac Tidar Cloud with seamless permission control.
+</p>
+<span class="text-sm font-semibold text-slate-400 flex items-center gap-1.5">
+<span>Seamless file bridge</span>
+<span>✓</span>
+</span>
+</div>
+<!-- Card 3: Account -->
+<div class="bg-white rounded-2xl p-8 border border-amberWood-200/80 shadow-card hover:border-primary/50 transition-all group">
+<div class="w-12 h-12 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24">
+<rect height="11" rx="2" ry="2" width="18" x="3" y="11"></rect>
+<path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+</svg>
+</div>
+<div class="flex items-center justify-between mb-2">
+<h3 class="text-xl font-bold text-slate-900">Mac Tidar Account</h3>
+<span class="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full bg-purple-100 text-purple-800">
+  Single Sign-On
+</span>
+</div>
+<p class="text-slate-600 text-sm leading-relaxed mb-6 font-body">
+  Your single passkey to all Mac Tidar experiences. Passkeys, 2FA hardware tokens, and enterprise SAML 2.0 readiness.
+</p>
+<span class="text-sm font-semibold text-slate-400 flex items-center gap-1.5">
+<span>Integrated security</span>
+<span>✓</span>
+</span>
+</div>
+</div>
+</div>
+</section>
+<!-- END: The Mac Tidar Ecosystem -->
+<!-- BEGIN: Why Mac Tidar Section -->
+<section class="py-24 sm:py-32 bg-white" id="why-mac-tidar">
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-start">
+<div class="lg:col-span-5 space-y-6 lg:sticky lg:top-32">
+<span class="text-xs uppercase tracking-widest font-bold text-primary">The Core Standard</span>
+<h2 class="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight leading-snug">
+  Technology should make life easier. Not more complicated.
+</h2>
+<p class="text-slate-600 leading-relaxed text-base sm:text-lg font-body">
+  We built Mac Tidar Mail because modern communication became noisy, slow, and overwhelming. Here is what we refuse to compromise on:
+</p>
+<div class="p-6 rounded-2xl bg-[#f7f2ea] border border-amberWood-200 space-y-3">
+<h4 class="font-bold text-amberWood-900 text-sm">Our Privacy Pledge</h4>
+<p class="text-xs text-amberWood-800 leading-relaxed font-body">
+  We never scan your private messages for advertising. Your communications are encrypted at rest and in transit across all endpoints.
+</p>
+</div>
+</div>
+<!-- 4 Core Pillars Grid -->
+<div class="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-6">
+<div class="p-6 rounded-2xl border border-slate-200 hover:border-amberWood-400 hover:shadow-md transition-all bg-[#fdfcfb]">
+<div class="w-10 h-10 rounded-lg bg-amberWood-100 text-amberWood-800 flex items-center justify-center font-bold mb-4">
+  01
+</div>
+<h3 class="text-lg font-bold text-slate-900 mb-2">Human Simplicity</h3>
+<p class="text-sm text-slate-600 leading-relaxed font-body">
+  No bloated sidebars or confusing settings menus. Just a clear, calm view of who is reaching out and what requires action.
+</p>
+</div>
+<div class="p-6 rounded-2xl border border-slate-200 hover:border-amberWood-400 hover:shadow-md transition-all bg-[#fdfcfb]">
+<div class="w-10 h-10 rounded-lg bg-amberWood-100 text-amberWood-800 flex items-center justify-center font-bold mb-4">
+  02
+</div>
+<h3 class="text-lg font-bold text-slate-900 mb-2">Lightning Speed</h3>
+<p class="text-sm text-slate-600 leading-relaxed font-body">
+  Engineered with Rust workers and pgvector indexing. Cold starts take less than 120ms and searches return in 38 milliseconds.
+</p>
+</div>
+<div class="p-6 rounded-2xl border border-slate-200 hover:border-amberWood-400 hover:shadow-md transition-all bg-[#fdfcfb]">
+<div class="w-10 h-10 rounded-lg bg-amberWood-100 text-amberWood-800 flex items-center justify-center font-bold mb-4">
+  03
+</div>
+<h3 class="text-lg font-bold text-slate-900 mb-2">Thoughtful Organization</h3>
+<p class="text-sm text-slate-600 leading-relaxed font-body">
+  Label taxonomies for Engineering, Product, Design, and Invoices that keep projects contextually separated yet always searchable.
+</p>
+</div>
+<div class="p-6 rounded-2xl border border-slate-200 hover:border-amberWood-400 hover:shadow-md transition-all bg-[#fdfcfb]">
+<div class="w-10 h-10 rounded-lg bg-amberWood-100 text-amberWood-800 flex items-center justify-center font-bold mb-4">
+  04
+</div>
+<h3 class="text-lg font-bold text-slate-900 mb-2">Accessible by Design</h3>
+<p class="text-sm text-slate-600 leading-relaxed font-body">
+  Full keyboard accessibility compliant with WCAG 2.2 AA standards. High contrast mode, legible typography, and low cognitive load.
+</p>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- END: Why Mac Tidar Section -->
+<!-- BEGIN: Strong Conversion Banner -->
+<section class="relative py-20 sm:py-28 bg-gradient-to-br from-primary via-indigo-900 to-slateDark text-white overflow-hidden" id="get-started">
+<div class="absolute -top-24 -right-24 w-96 h-96 rounded-full bg-amberWood-400/15 blur-3xl pointer-events-none"></div>
+<div class="absolute -bottom-24 -left-24 w-96 h-96 rounded-full bg-primary/30 blur-3xl pointer-events-none"></div>
+<div class="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center space-y-8">
+<h2 class="text-3xl sm:text-5xl font-extrabold tracking-tight leading-tight">
+  A better inbox is waiting.
+</h2>
+<p class="text-lg sm:text-xl text-brand-100 max-w-2xl mx-auto font-normal font-body">
+  Your conversations deserve a better home. Discover a simpler, more beautiful way to communicate with an official <strong>@mactidar.com</strong> email account.
+</p>
+<div class="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
+<a class="w-full sm:w-auto px-8 py-4 rounded-xl bg-white text-primary hover:bg-amberWood-50 font-bold text-base shadow-xl hover:shadow-2xl transition-all transform hover:-translate-y-0.5" href="https://mail.mactidar.com">
+  Create Your Account
+</a>
+<a class="w-full sm:w-auto px-8 py-4 rounded-xl bg-slateDark/70 hover:bg-slateDark text-white border border-white/20 font-semibold text-base transition-all" href="https://mail.mactidar.com">
+  Sign In to Webmail
+</a>
+</div>
+<div class="pt-4 flex items-center justify-center gap-6 text-xs text-brand-200 font-mono">
+<span>Instant setup</span>
+<span>•</span>
+<span>Free tier available</span>
+<span>•</span>
+<span>Cancel anytime</span>
+</div>
+</div>
+</section>
+<!-- END: Strong Conversion Banner -->
+<!-- BEGIN: FAQs Section -->
+<section class="py-24 sm:py-32 bg-[#faf7f2] border-b border-amber-900/10" id="faqs">
+<div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+<div class="text-center space-y-4 mb-16">
+<span class="text-xs uppercase tracking-widest font-bold text-primary">Got Questions?</span>
+<h2 class="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">Frequently Asked Questions</h2>
+<p class="text-slate-600 font-body">Everything you need to know about Mac Tidar Mail and our suite ecosystem.</p>
+</div>
+<!-- Interactive Details/Summary Accordion -->
+<div class="space-y-4" data-purpose="faq-accordion">
+<!-- FAQ 1 -->
+<details class="group bg-white rounded-2xl border border-slate-200/90 p-6 [&amp;_summary::-webkit-details-marker]:none transition-all hover:border-amberWood-300">
+<summary class="flex items-center justify-between cursor-pointer list-none text-slate-900 font-bold text-base sm:text-lg">
+<span>What is Mac Tidar Mail?</span>
+<span class="ml-4 transition-transform duration-300 text-slate-400 group-open:rotate-180">
+<svg class="w-5 h-5 chevron-icon" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</span>
+</summary>
+<div class="mt-4 text-slate-600 text-sm leading-relaxed border-t border-slate-100 pt-3 font-body">
+  Mac Tidar Mail is an ultra-fast, human-centric webmail application built for professionals, founders, and modern teams. It features zero-loss offline drafting, sub-40ms vector search, and unified workspace organization.
+</div>
+</details>
+<!-- FAQ 2 -->
+<details class="group bg-white rounded-2xl border border-slate-200/90 p-6 [&amp;_summary::-webkit-details-marker]:none transition-all hover:border-amberWood-300">
+<summary class="flex items-center justify-between cursor-pointer list-none text-slate-900 font-bold text-base sm:text-lg">
+<span>How do I create an account?</span>
+<span class="ml-4 transition-transform duration-300 text-slate-400 group-open:rotate-180">
+<svg class="w-5 h-5 chevron-icon" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</span>
+</summary>
+<div class="mt-4 text-slate-600 text-sm leading-relaxed border-t border-slate-100 pt-3 font-body">
+  Click on the 'Get Started' or 'Create Your Account' buttons on this page. You will be guided through a simple registration process to reserve your personalized address.
+</div>
+</details>
+<!-- FAQ 3 -->
+<details class="group bg-white rounded-2xl border border-slate-200/90 p-6 [&amp;_summary::-webkit-details-marker]:none transition-all hover:border-amberWood-300">
+<summary class="flex items-center justify-between cursor-pointer list-none text-slate-900 font-bold text-base sm:text-lg">
+<span>Will my email address end in @mactidar.com?</span>
+<span class="ml-4 transition-transform duration-300 text-slate-400 group-open:rotate-180">
+<svg class="w-5 h-5 chevron-icon" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</span>
+</summary>
+<div class="mt-4 text-slate-600 text-sm leading-relaxed border-t border-slate-100 pt-3 font-body">
+  Yes! All native accounts registered through the service receive an authentic <strong>yourname@mactidar.com</strong> email address. Custom domains are also supported for enterprise teams.
+</div>
+</details>
+<!-- FAQ 4 -->
+<details class="group bg-white rounded-2xl border border-slate-200/90 p-6 [&amp;_summary::-webkit-details-marker]:none transition-all hover:border-amberWood-300">
+<summary class="flex items-center justify-between cursor-pointer list-none text-slate-900 font-bold text-base sm:text-lg">
+<span>Can I use Mac Tidar Mail on my phone?</span>
+<span class="ml-4 transition-transform duration-300 text-slate-400 group-open:rotate-180">
+<svg class="w-5 h-5 chevron-icon" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</span>
+</summary>
+<div class="mt-4 text-slate-600 text-sm leading-relaxed border-t border-slate-100 pt-3 font-body">
+  Yes. Mac Tidar Mail is a responsive Progressive Web App (PWA). You can install it on iOS Safari or Android Chrome with offline cache and instant push notifications.
+</div>
+</details>
+<!-- FAQ 5 -->
+<details class="group bg-white rounded-2xl border border-slate-200/90 p-6 [&amp;_summary::-webkit-details-marker]:none transition-all hover:border-amberWood-300">
+<summary class="flex items-center justify-between cursor-pointer list-none text-slate-900 font-bold text-base sm:text-lg">
+<span>Is Mac Tidar Mail part of Mac Tidar Cloud?</span>
+<span class="ml-4 transition-transform duration-300 text-slate-400 group-open:rotate-180">
+<svg class="w-5 h-5 chevron-icon" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</span>
+</summary>
+<div class="mt-4 text-slate-600 text-sm leading-relaxed border-t border-slate-100 pt-3 font-body">
+  Yes, Mac Tidar Mail is closely integrated with Mac Tidar Cloud for document collaboration, encrypted attachment hosting, and team permissions.
+</div>
+</details>
+<!-- FAQ 6 -->
+<details class="group bg-white rounded-2xl border border-slate-200/90 p-6 [&amp;_summary::-webkit-details-marker]:none transition-all hover:border-amberWood-300">
+<summary class="flex items-center justify-between cursor-pointer list-none text-slate-900 font-bold text-base sm:text-lg">
+<span>Can I access other Mac Tidar products with the same account?</span>
+<span class="ml-4 transition-transform duration-300 text-slate-400 group-open:rotate-180">
+<svg class="w-5 h-5 chevron-icon" fill="none" stroke="currentColor" viewbox="0 0 24 24"><path d="M19 9l-7 7-7-7" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path></svg>
+</span>
+</summary>
+<div class="mt-4 text-slate-600 text-sm leading-relaxed border-t border-slate-100 pt-3 font-body">
+  Absolutely. Your Mac Tidar credentials work as a Single Sign-On (SSO) passkey across the entire Mac Tidar Suite.
+</div>
+</details>
+</div>
+</div>
+</section>
+<!-- END: FAQs Section -->
+<!-- BEGIN: Premium Studio Footer -->
+<footer class="bg-slateDark text-slate-400 pt-16 pb-12 border-t border-slate-800">
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+<div class="grid grid-cols-1 md:grid-cols-12 gap-10 pb-12 border-b border-slate-800">
+<div class="md:col-span-5 space-y-4">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-primary text-white flex items-center justify-center font-bold">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewbox="0 0 24 24">
+<rect height="16" rx="2" width="20" x="2" y="4"></rect>
+<path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path>
+</svg>
+</div>
+<span class="text-base font-bold text-white tracking-tight">Mac Tidar Mail</span>
+<span class="text-[10px] font-bold uppercase bg-amberWood-900/60 text-amberWood-300 px-2 py-0.5 rounded border border-amberWood-700/50">Studio Edition</span>
+</div>
+<p class="text-sm text-slate-400 max-w-sm leading-relaxed font-body">
+  The next-generation communication layer built with craft, privacy, and speed for high-performing product teams.
+</p>
+<div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-charcoal border border-slate-800 text-xs font-mono text-slate-300">
+<span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+<span>All systems operational @ mail.mactidar.com</span>
+</div>
+</div>
+<!-- Links Column 1 -->
+<div class="md:col-span-2 space-y-3 text-xs">
+<h4 class="font-bold text-slate-200 uppercase tracking-wider">Product</h4>
+<ul class="space-y-2 font-body">
+<li><a class="hover:text-white transition-colors" href="#features">Features</a></li>
+<li><a class="hover:text-white transition-colors" href="#experience">Desktop App</a></li>
+<li><a class="hover:text-white transition-colors" href="https://mail.mactidar.com">Web Client</a></li>
+<li><a class="hover:text-white transition-colors" href="#ecosystem">Mac Tidar Suite</a></li>
+<li><a class="hover:text-white transition-colors" href="#faqs">Changelog (v2.14)</a></li>
+</ul>
+</div>
+<!-- Links Column 2 -->
+<div class="md:col-span-2 space-y-3 text-xs">
+<h4 class="font-bold text-slate-200 uppercase tracking-wider">Ecosystem</h4>
+<ul class="space-y-2 font-body">
+<li><a class="hover:text-white transition-colors" href="#">Mac Tidar Cloud</a></li>
+<li><a class="hover:text-white transition-colors" href="#">Mac Tidar Account</a></li>
+<li><a class="hover:text-white transition-colors" href="#">Enterprise SAML</a></li>
+<li><a class="hover:text-white transition-colors" href="#">Security &amp; SOC-2</a></li>
+</ul>
+</div>
+<!-- Links Column 3 -->
+<div class="md:col-span-3 space-y-3 text-xs">
+<h4 class="font-bold text-slate-200 uppercase tracking-wider">Legal &amp; Trust</h4>
+<ul class="space-y-2 font-body">
+<li><a class="hover:text-white transition-colors" href="#">Privacy Policy</a></li>
+<li><a class="hover:text-white transition-colors" href="#">Terms of Service</a></li>
+<li><a class="hover:text-white transition-colors" href="#">Data Processing Addendum</a></li>
+<li><a class="hover:text-white transition-colors" href="#">Responsible Disclosure</a></li>
+</ul>
+</div>
+</div>
+<!-- Bottom Row: Copyright -->
+<div class="pt-8 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-500 gap-4 font-body">
+<p>© 2025 Mac Tidar Technologies Inc. All rights reserved.</p>
+<div class="flex items-center gap-6">
+<span class="hover:text-slate-300 cursor-pointer">Security Audited</span>
+<span class="hover:text-slate-300 cursor-pointer">End-to-End Encrypted</span>
+<span class="hover:text-slate-300 cursor-pointer">English (US)</span>
+</div>
+</div>
+</div>
+</footer>
+<!-- END: Premium Studio Footer -->
+<!-- BEGIN: Interactive Scripts -->
+<script data-purpose="mobile-menu-toggle">
+  const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+  const mobileMenu = document.getElementById('mobileMenu');
+
+  if (mobileMenuBtn && mobileMenu) {
+    mobileMenuBtn.addEventListener('click', () => {
+      const isExpanded = mobileMenu.classList.toggle('hidden');
+      mobileMenuBtn.setAttribute('aria-expanded', !isExpanded);
+    });
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+      const primaryCta = document.querySelector('a[href="#get-started"]');
+      if (primaryCta && !e.metaKey && !e.ctrlKey) {
+        primaryCta.click();
+      }
+    }
+  });
+</script>
+<!-- END: Interactive Scripts -->
+</body></html>
