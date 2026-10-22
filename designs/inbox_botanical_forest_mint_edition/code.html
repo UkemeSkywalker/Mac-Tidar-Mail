@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=Inter:wght@100..900&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={"darkMode":"class","theme":{"extend":{"colors":{"on-secondary-fixed":"#002113","on-tertiary-container":"#d9d9d5","on-background":"#191c17","on-primary-fixed-variant":"#005237","primary":"#005237","secondary-fixed":"#9ef4c6","surface-bright":"#f9faf1","on-error":"#ffffff","secondary":"#046c48","tertiary-fixed-dim":"#c6c7c3","on-primary-fixed":"#002114","on-tertiary-fixed":"#1a1c1a","tertiary":"#464845","inverse-surface":"#2e312c","tertiary-container":"#5e5f5c","primary-fixed":"#a9f2cc","surface-dim":"#d9dbd2","inverse-primary":"#8dd5b1","primary-container":"#216b4d","on-secondary-fixed-variant":"#005235","surface-container-highest":"#e2e3db","surface-container-high":"#e7e9e0","surface-variant":"#e2e3db","on-surface":"#191c17","on-tertiary":"#ffffff","on-surface-variant":"#3f4943","background":"#f9faf1","tertiary-fixed":"#e2e3df","on-secondary":"#ffffff","outline":"#6f7973","surface-container-low":"#f3f4ec","error-container":"#ffdad6","surface-container":"#edefe6","primary-fixed-dim":"#8dd5b1","outline-variant":"#bfc9c1","inverse-on-surface":"#f0f2e9","on-primary":"#ffffff","secondary-container":"#9bf2c4","error":"#ba1a1a","secondary-fixed-dim":"#82d8ab","on-secondary-container":"#0f714c","surface-container-lowest":"#ffffff","surface":"#f9faf1","on-primary-container":"#a0e9c3","on-error-container":"#93000a","on-tertiary-fixed-variant":"#454745","surface-tint":"#206a4d"},"borderRadius":{"DEFAULT":"0.125rem","lg":"0.25rem","xl":"0.5rem","full":"0.75rem"},"spacing":{"margin-md":"1.5rem","gutter-lg":"1.5rem","margin":"1rem","space-xl":"2rem","space-md":"0.75rem","space-lg":"1.25rem","space-xs":"0.25rem","space-sm":"0.5rem","gutter-md":"1rem","margin-lg":"2rem","gutter":"0.75rem"},"fontFamily":{"display":["Geist"],"label-md":["Inter"],"headline-sm":["Geist"],"headline-lg":["Geist"],"headline-md":["Geist"],"label-sm":["Inter"],"body-lg":["Inter"],"body-sm":["Inter"],"code-shortcut":["Geist"],"headline-lg-mobile":["Geist"],"body-md":["Inter"]},"fontSize":{"display":["32px",{"lineHeight":"40px","letterSpacing":"-0.025em","fontWeight":"600"}],"label-md":["12px",{"lineHeight":"16px","letterSpacing":"0.01em","fontWeight":"500"}],"headline-sm":["15px",{"lineHeight":"20px","letterSpacing":"-0.01em","fontWeight":"500"}],"headline-lg":["24px",{"lineHeight":"32px","letterSpacing":"-0.02em","fontWeight":"600"}],"headline-md":["18px",{"lineHeight":"24px","letterSpacing":"-0.015em","fontWeight":"500"}],"label-sm":["11px",{"lineHeight":"14px","letterSpacing":"0.02em","fontWeight":"500"}],"body-lg":["15px",{"lineHeight":"24px","letterSpacing":"-0.005em","fontWeight":"400"}],"body-sm":["12px",{"lineHeight":"16px","letterSpacing":"0.005em","fontWeight":"400"}],"code-shortcut":["11px",{"lineHeight":"12px","letterSpacing":"0.05em","fontWeight":"500"}],"headline-lg-mobile":["20px",{"lineHeight":"28px","letterSpacing":"-0.015em","fontWeight":"600"}],"body-md":["13px",{"lineHeight":"20px","letterSpacing":"0em","fontWeight":"400"}]}}}}</script></head><body class="bg-background font-body-md text-body-md text-on-surface antialiased"><aside class="fixed left-0 top-0 h-screen w-64 bg-[#153e2d] flex flex-col z-50 border-r border-[#103224]"><div class="h-14 px-gutter flex items-center justify-between"><div class="flex items-center gap-space-sm min-w-0"><img alt="Mac Tidar Mail Logo" class="h-8 w-auto object-contain rounded-lg p-0.5 bg-white/10" src="https://lh3.googleusercontent.com/aida/AEtjO1U0qpE3lVWK1lB5gJldm-p8r4Cdh4ziQFKevlJai6stAuJmKYzc4z5V_RHUQvikhZO0_Dx2kR-BmIsruVdxk0TnbcEtDJItMoHPlzNvub54t_sS8-14E3fDHf7WLu03iKdDKwpYH9XJNjOmmJmnuI8cMzHoGv-0Tk0xH4lCfeLq4T8xKLNf0NYSvdGUmBnU7vGmvnS5wxzWxbJjpjaP0GfHAAITV4E58e6RtzXRiJUFOGgKZLaXWFTB8Fi7"/><span class="font-headline-sm text-headline-sm text-white truncate tracking-tight">Mac Tidar Mail</span><span class="px-space-xs py-0.5 rounded-full bg-[#8ce2b5] text-[#0f2e21] font-label-sm text-label-sm uppercase tracking-wide font-semibold">Suite</span></div></div><div class="px-gutter py-space-xs"><button class="w-full flex items-center justify-between px-space-md py-space-sm bg-[#8ce2b5] text-[#0f2e21] font-semibold rounded-xl hover:bg-[#a3ebc7] active:bg-[#7ddba8] transition-colors shadow-sm" type="button"><div class="flex items-center gap-space-sm"><span class="material-symbols-outlined text-[18px]">edit_square</span><span class="font-headline-sm text-headline-sm">New Message</span></div><kbd class="px-space-xs py-0.5 rounded bg-[#0f2e21]/15 font-code-shortcut text-code-shortcut text-[#0f2e21] font-semibold">C</kbd></button></div><div class="flex-1 overflow-y-auto px-space-xs py-space-sm space-y-space-md"><div class="space-y-0.5"><div class="px-space-md py-space-xs font-label-sm text-label-sm uppercase text-[#88b9a1] font-medium tracking-wider">Mailboxes</div><nav class="space-y-0.5" data-active-classes="bg-[#1f543f] text-white font-headline-sm rounded-lg"><a aria-current="page" class="flex items-center justify-between px-space-md py-space-xs transition-colors bg-[#1f543f] text-white font-headline-sm rounded-lg" data-path="inbox" href="#"><div class="flex items-center gap-space-sm min-w-0"><span class="material-symbols-outlined text-[18px] text-[#8ce2b5]" style="font-variation-settings: 'FILL' 1;">inbox</span><span class="font-body-md text-body-md truncate">Inbox</span></div><span class="px-space-xs py-0.5 rounded-full bg-[#8ce2b5] text-[#0f2e21] font-label-sm text-label-sm font-semibold">14</span></a><a class="flex items-center justify-between px-space-md py-space-xs rounded-lg text-[#b8d9c8] hover:bg-[#1a4734] hover:text-white transition-colors" data-path="starred" href="#"><div class="flex items-center gap-space-sm min-w-0"><span class="material-symbols-outlined text-[18px] text-[#88b9a1]">star</span><span class="font-body-md text-body-md truncate">Starred</span></div><span class="px-space-xs py-0.5 rounded-full bg-[#1b4734] text-[#b8d9c8] font-label-sm text-label-sm">4</span></a><a class="flex items-center justify-between px-space-md py-space-xs rounded-lg text-[#b8d9c8] hover:bg-[#1a4734] hover:text-white transition-colors" data-path="snoozed" href="#"><div class="flex items-center gap-space-sm min-w-0"><span class="material-symbols-outlined text-[18px] text-[#88b9a1]">schedule</span><span class="font-body-md text-body-md truncate">Snoozed</span></div></a><a class="flex items-center justify-between px-space-md py-space-xs rounded-lg text-[#b8d9c8] hover:bg-[#1a4734] hover:text-white transition-colors" data-path="sent" href="#"><div class="flex items-center gap-space-sm min-w-0"><span class="material-symbols-outlined text-[18px] text-[#88b9a1]">send</span><span class="font-body-md text-body-md truncate">Sent</span></div></a><a class="flex items-center justify-between px-space-md py-space-xs rounded-lg text-[#b8d9c8] hover:bg-[#1a4734] hover:text-white transition-colors" data-path="drafts" href="#"><div class="flex items-center gap-space-sm min-w-0"><span class="material-symbols-outlined text-[18px] text-[#88b9a1]">draft</span><span class="font-body-md text-body-md truncate">Drafts</span></div><span class="px-space-xs py-0.5 rounded-full bg-[#1b4734] text-[#b8d9c8] font-label-sm text-label-sm">2</span></a><a class="flex items-center justify-between px-space-md py-space-xs rounded-lg text-[#b8d9c8] hover:bg-[#1a4734] hover:text-white transition-colors" data-path="scheduled" href="#"><div class="flex items-center gap-space-sm min-w-0"><span class="material-symbols-outlined text-[18px] text-[#88b9a1]">send_and_archive</span><span class="font-body-md text-body-md truncate">Scheduled</span></div></a><a class="flex items-center justify-between px-space-md py-space-xs rounded-lg text-[#b8d9c8] hover:bg-[#1a4734] hover:text-white transition-colors" data-path="archive" href="#"><div class="flex items-center gap-space-sm min-w-0"><span class="material-symbols-outlined text-[18px] text-[#88b9a1]">archive</span><span class="font-body-md text-body-md truncate">Archive</span></div></a><a class="flex items-center justify-between px-space-md py-space-xs rounded-lg text-[#b8d9c8] hover:bg-[#1a4734] hover:text-white transition-colors" data-path="spam" href="#"><div class="flex items-center gap-space-sm min-w-0"><span class="material-symbols-outlined text-[18px] text-[#88b9a1]">report</span><span class="font-body-md text-body-md truncate">Spam</span></div></a><a class="flex items-center justify-between px-space-md py-space-xs rounded-lg text-[#b8d9c8] hover:bg-[#1a4734] hover:text-white transition-colors" data-path="trash" href="#"><div class="flex items-center gap-space-sm min-w-0"><span class="material-symbols-outlined text-[18px] text-[#88b9a1]">delete</span><span class="font-body-md text-body-md truncate">Trash</span></div></a></nav></div><div class="space-y-0.5"><div class="px-space-md py-space-xs flex items-center justify-between"><span class="font-label-sm text-label-sm uppercase text-[#88b9a1] font-medium tracking-wider">Labels</span><button class="p-0.5 rounded text-[#88b9a1] hover:text-white hover:bg-[#1b4734] transition-colors" type="button"><span class="material-symbols-outlined text-[16px]">add</span></button></div><div class="space-y-0.5"><a class="flex items-center justify-between px-space-md py-space-xs rounded-lg text-[#b8d9c8] hover:bg-[#1a4734] hover:text-white transition-colors" data-path="label-engineering" href="#"><div class="flex items-center gap-space-sm"><span class="w-2 h-2 rounded-full bg-[#10b981]"></span><span class="font-body-md text-body-md">Engineering</span></div><span class="font-label-sm text-label-sm text-[#88b9a1]">8</span></a><a class="flex items-center justify-between px-space-md py-space-xs rounded-lg text-[#b8d9c8] hover:bg-[#1a4734] hover:text-white transition-colors" data-path="label-product" href="#"><div class="flex items-center gap-space-sm"><span class="w-2 h-2 rounded-full bg-[#8ce2b5]"></span><span class="font-body-md text-body-md">Product</span></div><span class="font-label-sm text-label-sm text-[#88b9a1]">3</span></a><a class="flex items-center justify-between px-space-md py-space-xs rounded-lg text-[#b8d9c8] hover:bg-[#1a4734] hover:text-white transition-colors" data-path="label-investors" href="#"><div class="flex items-center gap-space-sm"><span class="w-2 h-2 rounded-full bg-[#34d399]"></span><span class="font-body-md text-body-md">Investors</span></div></a><a class="flex items-center justify-between px-space-md py-space-xs rounded-lg text-[#b8d9c8] hover:bg-[#1a4734] hover:text-white transition-colors" data-path="label-design" href="#"><div class="flex items-center gap-space-sm"><span class="w-2 h-2 rounded-full bg-[#5eead4]"></span><span class="font-body-md text-body-md">Design</span></div><span class="font-label-sm text-label-sm text-[#88b9a1]">5</span></a><a class="flex items-center justify-between px-space-md py-space-xs rounded-lg text-[#b8d9c8] hover:bg-[#1a4734] hover:text-white transition-colors" data-path="label-invoices" href="#"><div class="flex items-center gap-space-sm"><span class="w-2 h-2 rounded-full bg-[#fbbf24]"></span><span class="font-body-md text-body-md">Invoices</span></div></a><a class="flex items-center justify-between px-space-md py-space-xs rounded-lg text-[#b8d9c8] hover:bg-[#1a4734] hover:text-white transition-colors" data-path="label-security" href="#"><div class="flex items-center gap-space-sm"><span class="w-2 h-2 rounded-full bg-[#f87171]"></span><span class="font-body-md text-body-md">Security</span></div></a></div></div></div><div class="p-gutter bg-[#0f2e21] border-t border-[#1a4734]"><div class="flex items-center justify-between mb-space-xs"><span class="font-label-sm text-label-sm text-[#88b9a1]">Storage</span><span class="font-label-sm text-label-sm text-white font-medium">4.2 GB / 15 GB (28%)</span></div><div class="w-full h-1.5 bg-[#1b4d3a] rounded-full overflow-hidden"><div class="h-full bg-[#8ce2b5] rounded-full" style="width: 28%"></div></div></div></aside><div class="pl-64 min-h-screen flex flex-col bg-background"><header class="fixed top-0 left-64 right-0 h-14 bg-[#f4f5ee]/95 border-b border-[#e2e6dd] z-40 px-gutter flex items-center justify-between gap-space-md"><div class="flex items-center gap-space-md flex-1 max-w-2xl"><button class="p-space-xs rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" type="button"><span class="material-symbols-outlined text-[20px]">menu_open</span></button><div class="relative flex-1"><div class="absolute inset-y-0 left-0 pl-space-sm flex items-center pointer-events-none"><span class="material-symbols-outlined text-[18px] text-outline">search</span></div><input class="w-full h-9 pl-8 pr-16 bg-surface-container-lowest border border-[#dce1d8] rounded-lg text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-body-sm font-body-sm" placeholder="Search messages, people, or labels (Press / to search)..." type="text"/><div class="absolute inset-y-0 right-0 pr-space-xs flex items-center gap-1"><kbd class="px-1.5 py-0.5 rounded bg-surface-container border border-outline-variant/50 text-on-surface-variant font-code-shortcut text-code-shortcut">⌘K</kbd><button class="p-1 text-on-surface-variant hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[16px]">tune</span></button></div></div></div><div class="flex items-center gap-space-sm"><button class="p-space-xs rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" type="button"><span class="material-symbols-outlined text-[20px]">light_mode</span></button><button class="p-space-xs rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" type="button"><span class="material-symbols-outlined text-[20px]">help</span></button><button class="p-space-xs rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" type="button"><span class="material-symbols-outlined text-[20px]">settings</span></button><button class="p-space-xs rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" type="button"><span class="material-symbols-outlined text-[20px]">apps</span></button><div class="relative ml-space-xs"><button class="flex items-center gap-space-sm p-1 rounded-full hover:bg-surface-container transition-colors" type="button"><img alt="Profile" class="w-8 h-8 rounded-full object-cover ring-1 ring-[#046c48]/30" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCgc_2Ctps8CQ4pshnIAFERryByjOGnlNzN1HFqXEpENJK0Fi_bEwUYiJCX3c_mAFZi077DONiwtKzG-Rroaj2kRo8Ed7P7sm-AzAjhhVT4B3GQhrG0xWhkbJSAza13FtAYOaFCZyyqPjiJlYw13eeqrN_mJP9Ct-TaF9mpDu3RvPPqu5mjU6nUkqphBNJwi3qRD0ql_wSwdacMmvJUG7NCkyPZB9XFFmuW_boVFTy_pAtjiI-nIPVsew"/><div class="hidden xl:flex flex-col text-left"><div class="flex items-center gap-1"><span class="font-label-md text-label-md text-on-surface font-semibold">Ukeme Eseme</span><span class="w-2 h-2 rounded-full bg-[#10b981]"></span></div><span class="font-label-sm text-label-sm text-on-surface-variant">ukeme@mactidar.com</span></div><span class="material-symbols-outlined text-[16px] text-on-surface-variant hidden xl:block">expand_more</span></button></div></div></header><main class="flex-1 pt-14 w-full"><div class="flex flex-col w-full h-[calc(100vh-3.5rem)] overflow-hidden">
+<!-- Top Command Context Bar: Category Tabs & Density / Filter Row -->
+<div class="shrink-0 bg-surface-container-lowest border-b border-[#e2e6dd] flex flex-col">
+<!-- Row 1: Inbox Category Channels & Fast Actions -->
+<div class="flex items-center justify-between px-gutter-lg pt-space-sm pb-0">
+<!-- Tabs -->
+<div class="flex items-center gap-space-sm" role="tablist">
+<!-- Tab: Primary -->
+<button aria-selected="true" class="group relative flex items-center gap-space-sm px-space-md py-space-sm text-primary font-headline-sm text-headline-sm transition-all focus:outline-none" role="tab" type="button">
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">inbox</span>
+<span>Primary</span>
+<span class="inline-flex items-center justify-center px-1.5 py-0.5 rounded-full bg-[#216b4d] text-white font-label-sm text-label-sm font-semibold tracking-tight shadow-sm">12 new</span>
+<!-- Active Line Indicator -->
+<div class="absolute bottom-0 left-0 right-0 h-0.5 bg-[#216b4d] rounded-full"></div>
+</button>
+<!-- Tab: Updates -->
+<button aria-selected="false" class="group relative flex items-center gap-space-sm px-space-md py-space-sm text-on-surface-variant hover:text-on-surface font-body-md text-body-md transition-colors focus:outline-none" role="tab" type="button">
+<span class="material-symbols-outlined text-[18px]">info</span>
+<span>Updates</span>
+<span class="inline-flex items-center justify-center px-1.5 py-0.5 rounded-full bg-surface-container text-on-surface-variant font-label-sm text-label-sm">GitHub, AWS, Stripe</span>
+</button>
+<!-- Tab: Newsletters -->
+<button aria-selected="false" class="group relative flex items-center gap-space-sm px-space-md py-space-sm text-on-surface-variant hover:text-on-surface font-body-md text-body-md transition-colors focus:outline-none" role="tab" type="button">
+<span class="material-symbols-outlined text-[18px]">newspaper</span>
+<span>Newsletters</span>
+<span class="inline-flex items-center justify-center px-1.5 py-0.5 rounded-full bg-surface-container text-on-surface-variant font-label-sm text-label-sm">TechCrunch, Stratechery</span>
+</button>
+</div>
+<!-- Quick Metrics & Status Indicator -->
+<div class="hidden 2xl:flex items-center gap-space-md text-on-surface-variant font-label-md text-label-md">
+<div class="flex items-center gap-1.5 bg-[#eaf5ef] px-2 py-1 rounded-lg border border-[#cbe6d7]">
+<span class="relative flex h-2 w-2">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#82d8ab] opacity-75"></span>
+<span class="relative inline-flex rounded-full h-2 w-2 bg-[#046c48]"></span>
+</span>
+<span class="text-[#005237] font-medium">Sync Active</span>
+<span class="text-[#3f4943]">· 2s ago</span>
+</div>
+</div>
+</div>
+<!-- Row 2: Operational Bulk Action & Toolbar Bar -->
+<div class="flex items-center justify-between px-gutter-lg py-space-xs bg-surface-container-low border-t border-[#e2e6dd]">
+<!-- Left side: Bulk Selector + Quick Batch Actions -->
+<div class="flex items-center gap-space-xs">
+<!-- Master Checkbox & Dropdown Trigger -->
+<div class="relative inline-flex items-center rounded-lg bg-surface-container-lowest border border-[#dce1d8] hover:bg-surface-container transition-colors">
+<label class="flex items-center px-2 py-1.5 cursor-pointer">
+<input class="peer sr-only" id="master-select-all" type="checkbox"/>
+<span class="w-3.5 h-3.5 rounded bg-surface-container-lowest border border-[#bec6bc] flex items-center justify-center transition-all peer-checked:bg-primary-container peer-checked:border-primary-container">
+<svg class="w-2.5 h-2.5 text-on-primary fill-current opacity-0 peer-checked:opacity-100 transition-opacity" viewbox="0 0 20 20">
+<path clip-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" fill-rule="evenodd"></path>
+</svg>
+</span>
+</label>
+<button aria-label="Selection options" class="p-1 pr-1.5 text-on-surface-variant hover:text-on-surface focus:outline-none" id="select-dropdown-btn" type="button">
+<span class="material-symbols-outlined text-[16px]">arrow_drop_down</span>
+</button>
+<!-- Selection dropdown menu (Hidden by default, togglable) -->
+<div class="hidden absolute left-0 top-full mt-1 w-36 bg-surface-container-lowest rounded-xl border border-[#dce1d8] shadow-lg z-50 py-1 font-body-sm text-body-sm" id="selection-dropdown">
+<button class="w-full text-left px-3 py-1.5 hover:bg-surface-container text-on-surface flex items-center justify-between" type="button">
+<span>All</span>
+<kbd class="font-code-shortcut text-code-shortcut text-on-surface-variant">⌘A</kbd>
+</button>
+<button class="w-full text-left px-3 py-1.5 hover:bg-surface-container text-on-surface" type="button">None</button>
+<button class="w-full text-left px-3 py-1.5 hover:bg-surface-container text-on-surface" type="button">Read</button>
+<button class="w-full text-left px-3 py-1.5 hover:bg-surface-container text-on-surface" type="button">Unread</button>
+<button class="w-full text-left px-3 py-1.5 hover:bg-surface-container text-on-surface" type="button">Starred</button>
+</div>
+</div>
+<div class="h-4 w-px bg-outline-variant/40 mx-1"></div>
+<!-- Bulk Action Buttons -->
+<div class="flex items-center gap-0.5">
+<button class="p-1.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors focus:outline-none" title="Archive (E)" type="button">
+<span class="material-symbols-outlined text-[18px]">archive</span>
+</button>
+<button class="p-1.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors focus:outline-none" title="Report Spam (!)" type="button">
+<span class="material-symbols-outlined text-[18px]">report</span>
+</button>
+<button class="p-1.5 rounded-lg text-on-surface-variant hover:text-error hover:bg-error-container/40 transition-colors focus:outline-none" title="Delete (#)" type="button">
+<span class="material-symbols-outlined text-[18px]">delete</span>
+</button>
+<button class="p-1.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors focus:outline-none" title="Mark as Read (Shift+I)" type="button">
+<span class="material-symbols-outlined text-[18px]">mark_email_read</span>
+</button>
+<button class="p-1.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors focus:outline-none" title="Snooze (B)" type="button">
+<span class="material-symbols-outlined text-[18px]">schedule</span>
+</button>
+<button class="p-1.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors focus:outline-none" title="Add Label (L)" type="button">
+<span class="material-symbols-outlined text-[18px]">label</span>
+</button>
+<button class="p-1.5 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors focus:outline-none" title="Move to Folder (V)" type="button">
+<span class="material-symbols-outlined text-[18px]">drive_file_move</span>
+</button>
+</div>
+</div>
+<!-- Right side: Refresh, Density, Sorting, Pagination -->
+<div class="flex items-center gap-space-sm font-label-md text-label-md text-on-surface-variant">
+<!-- Refresh Button -->
+<button class="p-1.5 rounded-lg hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors focus:outline-none" title="Sync Inbox (U)" type="button">
+<span class="material-symbols-outlined text-[18px]">refresh</span>
+</button>
+<!-- Density Selector -->
+<div class="flex items-center bg-surface-container p-0.5 rounded-lg border border-[#dce1d8]">
+<button class="px-2 py-0.5 rounded text-on-surface bg-surface-container-lowest border border-[#dce1d8] font-label-sm text-label-sm font-medium transition-all" id="density-comfortable-btn" type="button">Comfortable</button>
+<button class="px-2 py-0.5 rounded text-on-surface-variant hover:text-on-surface font-label-sm text-label-sm transition-all" id="density-compact-btn" type="button">Compact</button>
+</div>
+<div class="h-4 w-px bg-outline-variant/40"></div>
+<!-- Sort by Menu -->
+<div class="relative">
+<button class="flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-surface-container text-on-surface transition-colors font-label-md text-label-md" type="button">
+<span>Newest first</span>
+<span class="material-symbols-outlined text-[16px]">expand_more</span>
+</button>
+</div>
+<!-- Pagination -->
+<div class="flex items-center gap-1 pl-1">
+<span class="text-on-surface-variant font-label-sm text-label-sm font-medium">1–50 of 248</span>
+<div class="flex items-center">
+<button class="p-1 rounded text-on-surface-variant/40 cursor-not-allowed" disabled="" type="button">
+<span class="material-symbols-outlined text-[18px]">chevron_left</span>
+</button>
+<button class="p-1 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" type="button">
+<span class="material-symbols-outlined text-[18px]">chevron_right</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Main Feed & Detailed Reading Grid (Desktop 3-Pane Feel within Main Content) -->
+<div class="flex-1 flex overflow-hidden bg-background">
+<!-- Middle Pane: Thread Feed List -->
+<div class="flex-1 flex flex-col overflow-y-auto bg-surface-container-lowest divide-y divide-[#edf0eb] transition-all" id="thread-feed-container">
+<!-- Row 1: Elena Rostova (Unread, High Priority, Starred, Attachments) -->
+<div class="group relative flex items-center justify-between px-gutter-lg py-3 hover:bg-[#f3f6f0] cursor-pointer bg-[#fcfdfa] transition-all thread-row" data-density="comfortable">
+<!-- Leading Inset Active Stripe for unread state -->
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-[#216b4d]"></div>
+<!-- Left Controls & Sender Identity -->
+<div class="flex items-center gap-space-sm min-w-0 w-72 shrink-0 pr-space-sm">
+<!-- Checkbox -->
+<label class="flex items-center cursor-pointer p-1 -ml-1 text-on-surface-variant">
+<input class="thread-checkbox peer sr-only" type="checkbox"/>
+<span class="w-3.5 h-3.5 rounded bg-surface-container-low border border-[#bec6bc] flex items-center justify-center transition-all peer-checked:bg-[#216b4d] peer-checked:border-[#216b4d]">
+<svg class="w-2.5 h-2.5 text-white fill-current opacity-0 peer-checked:opacity-100 transition-opacity" viewbox="0 0 20 20">
+<path clip-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" fill-rule="evenodd"></path>
+</svg>
+</span>
+</label>
+<!-- Star Icon (Active) -->
+<button class="text-[#f59e0b] hover:scale-110 transition-transform focus:outline-none" title="Starred" type="button">
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">star</span>
+</button>
+<!-- Unread Dot Indicator -->
+<span class="w-2 h-2 rounded-full bg-[#216b4d] shrink-0"></span>
+<!-- Sender Identity -->
+<div class="flex items-center gap-2 min-w-0">
+<span class="font-headline-sm text-headline-sm text-[#191c17] font-semibold truncate">Elena Rostova</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant truncate opacity-80">(VP Product)</span>
+</div>
+</div>
+<!-- Center: Subject, Snippet & Rich Badges -->
+<div class="flex-1 flex items-center gap-space-md min-w-0 pr-gutter">
+<div class="flex items-center gap-space-xs shrink-0">
+<!-- Badge 1: Product -->
+<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[#046c48] bg-[#d7f3e4] border border-[#a6e6c2] font-label-sm text-label-sm font-medium">Product</span>
+<!-- Badge 2: Urgent -->
+<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[#ba1a1a] bg-[#ffdad6] border border-[#f8b4ad] font-label-sm text-label-sm font-semibold tracking-wide uppercase">Urgent</span>
+</div>
+<!-- Subject and preview text -->
+<div class="flex items-baseline gap-2 min-w-0 overflow-hidden">
+<span class="font-headline-sm text-headline-sm text-[#191c17] font-semibold truncate shrink-0">Q3 Product Roadmap: Multi-tenant Architecture &amp; Search Latency</span>
+<span class="font-body-md text-body-md text-on-surface-variant truncate">– Ukeme, here is the revised sprint scope for Q3. We benchmarked the new vector indexing against AWS OpenSearch and latency dropped by 42%...</span>
+</div>
+<!-- Attachment Pill Indicator -->
+<div class="hidden xl:flex items-center gap-1 px-2 py-0.5 rounded-lg bg-surface-container border border-[#dce1d8] text-on-surface-variant font-label-sm text-label-sm shrink-0">
+<span class="material-symbols-outlined text-[14px] text-[#216b4d]">picture_as_pdf</span>
+<span class="truncate max-w-[110px]">roadmap-v3.2.pdf</span>
+<span class="text-on-surface-variant/70 text-[10px]">1.4MB</span>
+</div>
+</div>
+<!-- Right Side: Hover Quick Actions + Timestamp -->
+<div class="shrink-0 flex items-center justify-end w-40 relative">
+<!-- Normal Timestamp View -->
+<div class="flex items-center gap-2 group-hover:opacity-0 transition-opacity">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">attach_file</span>
+<span class="font-label-md text-label-md text-on-surface font-semibold">10:42 AM</span>
+</div>
+<!-- Quick Action Buttons on Hover -->
+<div class="absolute right-0 opacity-0 group-hover:opacity-100 flex items-center gap-1 bg-surface-container-lowest/95 border border-[#dce1d8] px-1 py-0.5 rounded-lg shadow-sm transition-all">
+<button class="p-1 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface" title="Archive" type="button">
+<span class="material-symbols-outlined text-[16px]">archive</span>
+</button>
+<button class="p-1 rounded hover:bg-error-container/40 text-on-surface-variant hover:text-error" title="Delete" type="button">
+<span class="material-symbols-outlined text-[16px]">delete</span>
+</button>
+<button class="p-1 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface" title="Mark as read" type="button">
+<span class="material-symbols-outlined text-[16px]">drafts</span>
+</button>
+<button class="p-1 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface" title="Snooze" type="button">
+<span class="material-symbols-outlined text-[16px]">schedule</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Row 2: AWS Cloud Notifications (Unread) -->
+<div class="group relative flex items-center justify-between px-gutter-lg py-3 hover:bg-[#f3f6f0] cursor-pointer bg-[#fcfdfa] transition-all thread-row" data-density="comfortable">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-[#216b4d]"></div>
+<div class="flex items-center gap-space-sm min-w-0 w-72 shrink-0 pr-space-sm">
+<label class="flex items-center cursor-pointer p-1 -ml-1 text-on-surface-variant">
+<input class="thread-checkbox peer sr-only" type="checkbox"/>
+<span class="w-3.5 h-3.5 rounded bg-surface-container-low border border-[#bec6bc] flex items-center justify-center transition-all peer-checked:bg-[#216b4d] peer-checked:border-[#216b4d]">
+<svg class="w-2.5 h-2.5 text-white fill-current opacity-0 peer-checked:opacity-100 transition-opacity" viewbox="0 0 20 20">
+<path clip-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" fill-rule="evenodd"></path>
+</svg>
+</span>
+</label>
+<button class="text-outline-variant hover:text-[#f59e0b] hover:scale-110 transition-all focus:outline-none" title="Not starred" type="button">
+<span class="material-symbols-outlined text-[18px]">star</span>
+</button>
+<span class="w-2 h-2 rounded-full bg-[#216b4d] shrink-0"></span>
+<div class="flex items-center gap-2 min-w-0">
+<span class="font-headline-sm text-headline-sm text-[#191c17] font-semibold truncate">AWS Cloud Notifications</span>
+</div>
+</div>
+<div class="flex-1 flex items-center gap-space-md min-w-0 pr-gutter">
+<div class="flex items-center gap-space-xs shrink-0">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[#005237] bg-[#cbeedc] border border-[#9ae1be] font-label-sm text-label-sm font-medium">Engineering</span>
+</div>
+<div class="flex items-baseline gap-2 min-w-0 overflow-hidden">
+<span class="font-headline-sm text-headline-sm text-[#191c17] font-semibold truncate shrink-0">[Production Alert] AWS Amplify build succeeded for mail.mactidar.com (commit 7f4a91c)</span>
+<span class="font-body-md text-body-md text-on-surface-variant truncate">– Deployment completed in 1m 24s. Branch main is live at https://mail.mactidar.com. All 48 unit and integration tests passed.</span>
+</div>
+</div>
+<div class="shrink-0 flex items-center justify-end w-40 relative">
+<div class="flex items-center gap-2 group-hover:opacity-0 transition-opacity">
+<span class="font-label-md text-label-md text-on-surface font-semibold">9:15 AM</span>
+</div>
+<div class="absolute right-0 opacity-0 group-hover:opacity-100 flex items-center gap-1 bg-surface-container-lowest/95 border border-[#dce1d8] px-1 py-0.5 rounded-lg shadow-sm transition-all">
+<button class="p-1 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[16px]">archive</span></button>
+<button class="p-1 rounded hover:bg-error-container/40 text-on-surface-variant hover:text-error" type="button"><span class="material-symbols-outlined text-[16px]">delete</span></button>
+<button class="p-1 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[16px]">drafts</span></button>
+<button class="p-1 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[16px]">schedule</span></button>
+</div>
+</div>
+</div>
+<!-- Row 3: Tariq Al-Mansoor (Unread, Starred) -->
+<div class="group relative flex items-center justify-between px-gutter-lg py-3 hover:bg-[#f3f6f0] cursor-pointer bg-[#fcfdfa] transition-all thread-row" data-density="comfortable">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-[#216b4d]"></div>
+<div class="flex items-center gap-space-sm min-w-0 w-72 shrink-0 pr-space-sm">
+<label class="flex items-center cursor-pointer p-1 -ml-1 text-on-surface-variant">
+<input class="thread-checkbox peer sr-only" type="checkbox"/>
+<span class="w-3.5 h-3.5 rounded bg-surface-container-low border border-[#bec6bc] flex items-center justify-center transition-all peer-checked:bg-[#216b4d] peer-checked:border-[#216b4d]">
+<svg class="w-2.5 h-2.5 text-white fill-current opacity-0 peer-checked:opacity-100 transition-opacity" viewbox="0 0 20 20">
+<path clip-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" fill-rule="evenodd"></path>
+</svg>
+</span>
+</label>
+<button class="text-[#f59e0b] hover:scale-110 transition-transform focus:outline-none" title="Starred" type="button">
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">star</span>
+</button>
+<span class="w-2 h-2 rounded-full bg-[#216b4d] shrink-0"></span>
+<div class="flex items-center gap-2 min-w-0">
+<span class="font-headline-sm text-headline-sm text-[#191c17] font-semibold truncate">Tariq Al-Mansoor</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant truncate opacity-80">(Founders Fund)</span>
+</div>
+</div>
+<div class="flex-1 flex items-center gap-space-md min-w-0 pr-gutter">
+<div class="flex items-center gap-space-xs shrink-0">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[#0f714c] bg-[#e1f7ec] border border-[#aae7c8] font-label-sm text-label-sm font-medium">Investors</span>
+</div>
+<div class="flex items-baseline gap-2 min-w-0 overflow-hidden">
+<span class="font-headline-sm text-headline-sm text-[#191c17] font-semibold truncate shrink-0">Follow-up: Mac Tidar Series A allocation &amp; term sheet syndicate</span>
+<span class="font-body-md text-body-md text-on-surface-variant truncate">– Terrific catching up yesterday Ukeme. Our partners were deeply impressed by your retention metrics across the Nigerian tech corridor and enterprise pilots...</span>
+</div>
+</div>
+<div class="shrink-0 flex items-center justify-end w-40 relative">
+<div class="flex items-center gap-2 group-hover:opacity-0 transition-opacity">
+<span class="font-label-md text-label-md text-on-surface font-semibold">Yesterday</span>
+</div>
+<div class="absolute right-0 opacity-0 group-hover:opacity-100 flex items-center gap-1 bg-surface-container-lowest/95 border border-[#dce1d8] px-1 py-0.5 rounded-lg shadow-sm transition-all">
+<button class="p-1 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[16px]">archive</span></button>
+<button class="p-1 rounded hover:bg-error-container/40 text-on-surface-variant hover:text-error" type="button"><span class="material-symbols-outlined text-[16px]">delete</span></button>
+<button class="p-1 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[16px]">drafts</span></button>
+<button class="p-1 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[16px]">schedule</span></button>
+</div>
+</div>
+</div>
+<!-- Row 4: GitHub (Read) -->
+<div class="group relative flex items-center justify-between px-gutter-lg py-3 hover:bg-[#f3f6f0] cursor-pointer bg-surface-container-lowest transition-all thread-row" data-density="comfortable">
+<div class="flex items-center gap-space-sm min-w-0 w-72 shrink-0 pr-space-sm">
+<label class="flex items-center cursor-pointer p-1 -ml-1 text-on-surface-variant">
+<input class="thread-checkbox peer sr-only" type="checkbox"/>
+<span class="w-3.5 h-3.5 rounded bg-surface-container-low border border-[#bec6bc] flex items-center justify-center transition-all peer-checked:bg-[#216b4d] peer-checked:border-[#216b4d]">
+<svg class="w-2.5 h-2.5 text-white fill-current opacity-0 peer-checked:opacity-100 transition-opacity" viewbox="0 0 20 20">
+<path clip-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" fill-rule="evenodd"></path>
+</svg>
+</span>
+</label>
+<button class="text-outline-variant hover:text-[#f59e0b] hover:scale-110 transition-all focus:outline-none" title="Not starred" type="button">
+<span class="material-symbols-outlined text-[18px]">star</span>
+</button>
+<!-- Spacer for unread dot balance -->
+<span class="w-2 h-2 shrink-0"></span>
+<div class="flex items-center gap-2 min-w-0">
+<span class="font-body-md text-body-md text-on-surface font-medium truncate">GitHub</span>
+</div>
+</div>
+<div class="flex-1 flex items-center gap-space-md min-w-0 pr-gutter">
+<div class="flex items-center gap-space-xs shrink-0">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[#005237] bg-[#cbeedc] border border-[#9ae1be] font-label-sm text-label-sm font-medium">Engineering</span>
+</div>
+<div class="flex items-baseline gap-2 min-w-0 overflow-hidden">
+<span class="font-body-md text-body-md text-on-surface truncate shrink-0">[mactidar/core-api] Pull Request #142 merged by dev-lead: Implement Webhook retry policies</span>
+<span class="font-body-md text-body-md text-on-surface-variant/80 truncate">– dev-lead merged commit 88a10c into develop. Reviewers approved: @ukeme, @alex-tech.</span>
+</div>
+</div>
+<div class="shrink-0 flex items-center justify-end w-40 relative">
+<div class="flex items-center gap-2 group-hover:opacity-0 transition-opacity">
+<span class="font-label-md text-label-md text-on-surface-variant">Yesterday</span>
+</div>
+<div class="absolute right-0 opacity-0 group-hover:opacity-100 flex items-center gap-1 bg-surface-container-lowest/95 border border-[#dce1d8] px-1 py-0.5 rounded-lg shadow-sm transition-all">
+<button class="p-1 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[16px]">archive</span></button>
+<button class="p-1 rounded hover:bg-error-container/40 text-on-surface-variant hover:text-error" type="button"><span class="material-symbols-outlined text-[16px]">delete</span></button>
+<button class="p-1 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[16px]">mark_email_unread</span></button>
+<button class="p-1 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[16px]">schedule</span></button>
+</div>
+</div>
+</div>
+<!-- Row 5: Amara Nwosu (Read, Attachment) -->
+<div class="group relative flex items-center justify-between px-gutter-lg py-3 hover:bg-[#f3f6f0] cursor-pointer bg-surface-container-lowest transition-all thread-row" data-density="comfortable">
+<div class="flex items-center gap-space-sm min-w-0 w-72 shrink-0 pr-space-sm">
+<label class="flex items-center cursor-pointer p-1 -ml-1 text-on-surface-variant">
+<input class="thread-checkbox peer sr-only" type="checkbox"/>
+<span class="w-3.5 h-3.5 rounded bg-surface-container-low border border-[#bec6bc] flex items-center justify-center transition-all peer-checked:bg-[#216b4d] peer-checked:border-[#216b4d]">
+<svg class="w-2.5 h-2.5 text-white fill-current opacity-0 peer-checked:opacity-100 transition-opacity" viewbox="0 0 20 20">
+<path clip-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" fill-rule="evenodd"></path>
+</svg>
+</span>
+</label>
+<button class="text-outline-variant hover:text-[#f59e0b] hover:scale-110 transition-all focus:outline-none" title="Not starred" type="button">
+<span class="material-symbols-outlined text-[18px]">star</span>
+</button>
+<span class="w-2 h-2 shrink-0"></span>
+<div class="flex items-center gap-2 min-w-0">
+<span class="font-body-md text-body-md text-on-surface font-medium truncate">Amara Nwosu</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant truncate opacity-80">(Lead UI)</span>
+</div>
+</div>
+<div class="flex-1 flex items-center gap-space-md min-w-0 pr-gutter">
+<div class="flex items-center gap-space-xs shrink-0">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[#046c48] bg-[#d9f5e6] border border-[#a8ecc7] font-label-sm text-label-sm font-medium">Design</span>
+</div>
+<div class="flex items-baseline gap-2 min-w-0 overflow-hidden">
+<span class="font-body-md text-body-md text-on-surface truncate shrink-0">Figma review: Design tokens and dark mode elevation specs for Mac Tidar Mail</span>
+<span class="font-body-md text-body-md text-on-surface-variant/80 truncate">– Hey Ukeme, updated the component library with strict WCAG 2.2 AA contrast ratios and refined our Lucide icon weights. Check frame 4 in Figma.</span>
+</div>
+<div class="hidden xl:flex items-center gap-1 px-2 py-0.5 rounded-lg bg-surface-container border border-[#dce1d8] text-on-surface-variant font-label-sm text-label-sm shrink-0">
+<span class="material-symbols-outlined text-[14px] text-[#216b4d]">data_object</span>
+<span class="truncate max-w-[120px]">design-tokens-v2.json</span>
+<span class="text-on-surface-variant/70 text-[10px]">18KB</span>
+</div>
+</div>
+<div class="shrink-0 flex items-center justify-end w-40 relative">
+<div class="flex items-center gap-2 group-hover:opacity-0 transition-opacity">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">attach_file</span>
+<span class="font-label-md text-label-md text-on-surface-variant">Oct 24</span>
+</div>
+<div class="absolute right-0 opacity-0 group-hover:opacity-100 flex items-center gap-1 bg-surface-container-lowest/95 border border-[#dce1d8] px-1 py-0.5 rounded-lg shadow-sm transition-all">
+<button class="p-1 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[16px]">archive</span></button>
+<button class="p-1 rounded hover:bg-error-container/40 text-on-surface-variant hover:text-error" type="button"><span class="material-symbols-outlined text-[16px]">delete</span></button>
+<button class="p-1 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[16px]">mark_email_unread</span></button>
+<button class="p-1 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[16px]">schedule</span></button>
+</div>
+</div>
+</div>
+<!-- Row 6: Stripe Billing (Read, Attachment) -->
+<div class="group relative flex items-center justify-between px-gutter-lg py-3 hover:bg-[#f3f6f0] cursor-pointer bg-surface-container-lowest transition-all thread-row" data-density="comfortable">
+<div class="flex items-center gap-space-sm min-w-0 w-72 shrink-0 pr-space-sm">
+<label class="flex items-center cursor-pointer p-1 -ml-1 text-on-surface-variant">
+<input class="thread-checkbox peer sr-only" type="checkbox"/>
+<span class="w-3.5 h-3.5 rounded bg-surface-container-low border border-[#bec6bc] flex items-center justify-center transition-all peer-checked:bg-[#216b4d] peer-checked:border-[#216b4d]">
+<svg class="w-2.5 h-2.5 text-white fill-current opacity-0 peer-checked:opacity-100 transition-opacity" viewbox="0 0 20 20">
+<path clip-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" fill-rule="evenodd"></path>
+</svg>
+</span>
+</label>
+<button class="text-outline-variant hover:text-[#f59e0b] hover:scale-110 transition-all focus:outline-none" title="Not starred" type="button">
+<span class="material-symbols-outlined text-[18px]">star</span>
+</button>
+<span class="w-2 h-2 shrink-0"></span>
+<div class="flex items-center gap-2 min-w-0">
+<span class="font-body-md text-body-md text-on-surface font-medium truncate">Stripe Billing</span>
+</div>
+</div>
+<div class="flex-1 flex items-center gap-space-md min-w-0 pr-gutter">
+<div class="flex items-center gap-space-xs shrink-0">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[#78350f] bg-[#fef3c7] border border-[#fde68a] font-label-sm text-label-sm font-medium">Invoices</span>
+</div>
+<div class="flex items-baseline gap-2 min-w-0 overflow-hidden">
+<span class="font-body-md text-body-md text-on-surface truncate shrink-0">Invoice #MT-2024-1082 paid ($12,450.00)</span>
+<span class="font-body-md text-body-md text-on-surface-variant/80 truncate">– Your payment to Amazon Web Services EMEA SARL was successful. A receipt has been attached.</span>
+</div>
+<div class="hidden xl:flex items-center gap-1 px-2 py-0.5 rounded-lg bg-surface-container border border-[#dce1d8] text-on-surface-variant font-label-sm text-label-sm shrink-0">
+<span class="material-symbols-outlined text-[14px] text-[#216b4d]">receipt_long</span>
+<span class="truncate max-w-[120px]">invoice-1082.pdf</span>
+</div>
+</div>
+<div class="shrink-0 flex items-center justify-end w-40 relative">
+<div class="flex items-center gap-2 group-hover:opacity-0 transition-opacity">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">attach_file</span>
+<span class="font-label-md text-label-md text-on-surface-variant">Oct 23</span>
+</div>
+<div class="absolute right-0 opacity-0 group-hover:opacity-100 flex items-center gap-1 bg-surface-container-lowest/95 border border-[#dce1d8] px-1 py-0.5 rounded-lg shadow-sm transition-all">
+<button class="p-1 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[16px]">archive</span></button>
+<button class="p-1 rounded hover:bg-error-container/40 text-on-surface-variant hover:text-error" type="button"><span class="material-symbols-outlined text-[16px]">delete</span></button>
+<button class="p-1 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[16px]">mark_email_unread</span></button>
+<button class="p-1 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[16px]">schedule</span></button>
+</div>
+</div>
+</div>
+<!-- Row 7: Chidi Okonkwo (Read) -->
+<div class="group relative flex items-center justify-between px-gutter-lg py-3 hover:bg-[#f3f6f0] cursor-pointer bg-surface-container-lowest transition-all thread-row" data-density="comfortable">
+<div class="flex items-center gap-space-sm min-w-0 w-72 shrink-0 pr-space-sm">
+<label class="flex items-center cursor-pointer p-1 -ml-1 text-on-surface-variant">
+<input class="thread-checkbox peer sr-only" type="checkbox"/>
+<span class="w-3.5 h-3.5 rounded bg-surface-container-low border border-[#bec6bc] flex items-center justify-center transition-all peer-checked:bg-[#216b4d] peer-checked:border-[#216b4d]">
+<svg class="w-2.5 h-2.5 text-white fill-current opacity-0 peer-checked:opacity-100 transition-opacity" viewbox="0 0 20 20">
+<path clip-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" fill-rule="evenodd"></path>
+</svg>
+</span>
+</label>
+<button class="text-outline-variant hover:text-[#f59e0b] hover:scale-110 transition-all focus:outline-none" title="Not starred" type="button">
+<span class="material-symbols-outlined text-[18px]">star</span>
+</button>
+<span class="w-2 h-2 shrink-0"></span>
+<div class="flex items-center gap-2 min-w-0">
+<span class="font-body-md text-body-md text-on-surface font-medium truncate">Chidi Okonkwo</span>
+<span class="font-label-sm text-label-sm text-on-surface-variant truncate opacity-80">(Head of Sec)</span>
+</div>
+</div>
+<div class="flex-1 flex items-center gap-space-md min-w-0 pr-gutter">
+<div class="flex items-center gap-space-xs shrink-0">
+<span class="inline-flex items-center px-2 py-0.5 rounded-full text-[#991b1b] bg-[#fee2e2] border border-[#fca5a5] font-label-sm text-label-sm font-medium">Security</span>
+</div>
+<div class="flex items-baseline gap-2 min-w-0 overflow-hidden">
+<span class="font-body-md text-body-md text-on-surface truncate shrink-0">Quarterly SOC2 Type II Audit Preparation &amp; IAM Key Rotation</span>
+<span class="font-body-md text-body-md text-on-surface-variant/80 truncate">– Reminding all administrators that quarterly session tokens and KMS keys will rotate this Sunday at 02:00 UTC. Zero downtime expected.</span>
+</div>
+</div>
+<div class="shrink-0 flex items-center justify-end w-40 relative">
+<div class="flex items-center gap-2 group-hover:opacity-0 transition-opacity">
+<span class="font-label-md text-label-md text-on-surface-variant">Oct 22</span>
+</div>
+<div class="absolute right-0 opacity-0 group-hover:opacity-100 flex items-center gap-1 bg-surface-container-lowest/95 border border-[#dce1d8] px-1 py-0.5 rounded-lg shadow-sm transition-all">
+<button class="p-1 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[16px]">archive</span></button>
+<button class="p-1 rounded hover:bg-error-container/40 text-on-surface-variant hover:text-error" type="button"><span class="material-symbols-outlined text-[16px]">delete</span></button>
+<button class="p-1 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[16px]">mark_email_unread</span></button>
+<button class="p-1 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[16px]">schedule</span></button>
+</div>
+</div>
+</div>
+<!-- Visual Empty Space / In-Feed Subtle Insights Banner (High Productivity Polish) -->
+<div class="p-gutter-lg flex items-center justify-between bg-[#eaf5ef] border border-[#cbe6d7] mt-4 rounded-2xl mx-gutter-lg">
+<div class="flex items-center gap-space-md">
+<div class="w-10 h-10 rounded-xl bg-[#216b4d]/15 flex items-center justify-center text-[#216b4d]">
+<span class="material-symbols-outlined text-[24px]">insights</span>
+</div>
+<div>
+<h4 class="font-headline-sm text-headline-sm text-[#005237] font-semibold">Inbox Zero Progress</h4>
+<p class="font-body-sm text-body-sm text-[#3f4943]">You responded to 18 priority communications today with an average reply velocity of 14 minutes.</p>
+</div>
+</div>
+<!-- Inline mini sparkline visualization -->
+<div class="hidden md:flex items-center gap-space-md">
+<div class="flex flex-col items-end">
+<span class="font-label-sm text-label-sm uppercase tracking-wider text-[#3f4943]">Weekly Response Velocity</span>
+<span class="font-headline-sm text-headline-sm text-[#005237] font-bold">98.4% On-Time</span>
+</div>
+<svg class="w-28 h-8 text-[#216b4d] overflow-visible" fill="none" viewbox="0 0 100 30">
+<path d="M0 25 L18 20 L35 24 L52 10 L70 14 L88 4 L100 8" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"></path>
+<path d="M0 25 L18 20 L35 24 L52 10 L70 14 L88 4 L100 8 L100 30 L0 30 Z" fill="currentColor" fill-opacity="0.1"></path>
+</svg>
+</div>
+</div>
+</div>
+</div>
+<!-- Footer Keyboard Shortcuts HUD & Floating Mini-Compose Trigger -->
+<div class="relative shrink-0 flex items-center justify-between px-gutter-lg py-2 bg-[#f4f5ee] border-t border-[#e2e6dd] z-20">
+<!-- Keyboard Shortcut Bar -->
+<div class="flex items-center gap-space-md text-on-surface-variant font-label-sm text-label-sm overflow-x-auto py-1">
+<span class="font-semibold text-on-surface uppercase tracking-wider text-[10px]">Shortcuts</span>
+<div class="flex items-center gap-1.5">
+<kbd class="px-1.5 py-0.5 rounded bg-surface-container-lowest border border-[#dce1d8] font-code-shortcut text-code-shortcut text-on-surface shadow-sm">C</kbd>
+<span>Compose</span>
+</div>
+<div class="flex items-center gap-1.5">
+<kbd class="px-1.5 py-0.5 rounded bg-surface-container-lowest border border-[#dce1d8] font-code-shortcut text-code-shortcut text-on-surface shadow-sm">J</kbd>
+<kbd class="px-1.5 py-0.5 rounded bg-surface-container-lowest border border-[#dce1d8] font-code-shortcut text-code-shortcut text-on-surface shadow-sm">K</kbd>
+<span>Navigate</span>
+</div>
+<div class="flex items-center gap-1.5">
+<kbd class="px-1.5 py-0.5 rounded bg-surface-container-lowest border border-[#dce1d8] font-code-shortcut text-code-shortcut text-on-surface shadow-sm">E</kbd>
+<span>Archive</span>
+</div>
+<div class="flex items-center gap-1.5">
+<kbd class="px-1.5 py-0.5 rounded bg-surface-container-lowest border border-[#dce1d8] font-code-shortcut text-code-shortcut text-on-surface shadow-sm">#</kbd>
+<span>Delete</span>
+</div>
+<div class="flex items-center gap-1.5">
+<kbd class="px-1.5 py-0.5 rounded bg-surface-container-lowest border border-[#dce1d8] font-code-shortcut text-code-shortcut text-on-surface shadow-sm">R</kbd>
+<span>Reply</span>
+</div>
+<div class="flex items-center gap-1.5">
+<kbd class="px-1.5 py-0.5 rounded bg-surface-container-lowest border border-[#dce1d8] font-code-shortcut text-code-shortcut text-on-surface shadow-sm">/</kbd>
+<span>Search</span>
+</div>
+</div>
+<!-- Active Workspace Status Badge -->
+<div class="flex items-center gap-2">
+<span class="inline-flex items-center gap-1 text-[11px] font-medium text-on-surface-variant">
+<span class="w-1.5 h-1.5 rounded-full bg-[#10b981]"></span>
+        Mac Tidar Production Cluster · v2.14.0
+      </span>
+</div>
+</div>
+<!-- Docked / Floating Mini-Compose Widget (Bottom Right) -->
+<div class="fixed right-6 bottom-12 w-96 bg-surface-container-lowest rounded-xl border border-[#dce1d8] shadow-2xl z-40 overflow-hidden transform transition-all duration-300 translate-y-0" id="mini-composer">
+<!-- Header of mini compose -->
+<div class="flex items-center justify-between px-space-md py-space-sm bg-[#153e2d] cursor-pointer select-none text-white" id="composer-header">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-[#8ce2b5]">edit_note</span>
+<span class="font-headline-sm text-headline-sm text-white font-semibold text-xs tracking-wide">New Message · <span class="text-[#8ce2b5]">Draft</span></span>
+</div>
+<div class="flex items-center gap-1">
+<button class="p-1 rounded hover:bg-[#1f543f] text-[#b8d9c8] hover:text-white focus:outline-none" id="composer-minimize-btn" type="button">
+<span class="material-symbols-outlined text-[16px]">minimize</span>
+</button>
+<button class="p-1 rounded hover:bg-[#1f543f] text-[#b8d9c8] hover:text-white focus:outline-none" id="composer-expand-btn" type="button">
+<span class="material-symbols-outlined text-[16px]">open_in_full</span>
+</button>
+<button class="p-1 rounded hover:bg-error/30 text-[#b8d9c8] hover:text-white focus:outline-none" id="composer-close-btn" type="button">
+<span class="material-symbols-outlined text-[16px]">close</span>
+</button>
+</div>
+</div>
+<!-- Body of mini compose -->
+<div class="p-space-md space-y-space-sm bg-surface-container-lowest" id="composer-body">
+<div class="flex items-center justify-between text-on-surface-variant text-body-sm font-body-sm pb-1">
+<div class="flex items-center gap-2 w-full">
+<span class="text-on-surface-variant/70 w-8">To</span>
+<input class="w-full bg-transparent text-on-surface focus:outline-none font-medium" placeholder="Recipients" type="text" value="elena@mactidar.com"/>
+</div>
+<div class="flex items-center gap-1 text-[11px] text-[#005237] font-semibold cursor-pointer hover:underline">
+<span>Cc</span>
+<span>Bcc</span>
+</div>
+</div>
+<div class="w-full h-px bg-[#e7e9e0]"></div>
+<div class="flex items-center gap-2 text-on-surface-variant text-body-sm font-body-sm pb-1">
+<span class="text-on-surface-variant/70 w-8">Subj</span>
+<input class="w-full bg-transparent text-on-surface font-semibold focus:outline-none" placeholder="Subject" type="text" value="Re: Q3 Product Roadmap Feedback"/>
+</div>
+<div class="w-full h-px bg-[#e7e9e0]"></div>
+<!-- Text area -->
+<textarea class="w-full bg-transparent text-on-surface text-body-sm font-body-sm focus:outline-none resize-none pt-1" placeholder="Type your response here..." rows="4">Hi Elena,
+
+Latency reduction benchmarks look extremely solid. Let's greenlight the vector cache indexer before Thursday's sprint freeze.</textarea>
+<!-- Formatting toolbar & Send button -->
+<div class="flex items-center justify-between pt-2 border-t border-[#e7e9e0]">
+<div class="flex items-center gap-1 text-on-surface-variant">
+<button class="p-1 rounded hover:bg-surface-container hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[16px]">format_bold</span></button>
+<button class="p-1 rounded hover:bg-surface-container hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[16px]">format_italic</span></button>
+<button class="p-1 rounded hover:bg-surface-container hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[16px]">link</span></button>
+<button class="p-1 rounded hover:bg-surface-container hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[16px]">attach_file</span></button>
+<button class="p-1 rounded hover:bg-surface-container hover:text-on-surface" type="button"><span class="material-symbols-outlined text-[16px]">sentiment_satisfied</span></button>
+</div>
+<div class="flex items-center gap-1">
+<button class="px-3 py-1.5 rounded-lg bg-[#216b4d] text-white font-headline-sm text-headline-sm text-xs font-semibold hover:bg-[#005237] transition-all flex items-center gap-1 shadow-sm" type="button">
+<span>Send</span>
+<span class="material-symbols-outlined text-[14px]">send</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Interactive JavaScript Controller for Micro-interactions -->
+<script>
+    // Selection Dropdown Toggle
+    const selectBtn = document.getElementById('select-dropdown-btn');
+    const selectDropdown = document.getElementById('selection-dropdown');
+    const masterCheckbox = document.getElementById('master-select-all');
+    const threadCheckboxes = document.querySelectorAll('.thread-checkbox');
+
+    if (selectBtn && selectDropdown) {
+      selectBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        selectDropdown.classList.toggle('hidden');
+      });
+
+      document.addEventListener('click', () => {
+        selectDropdown.classList.add('hidden');
+      });
+    }
+
+    // Master Select / Deselect Logic
+    if (masterCheckbox) {
+      masterCheckbox.addEventListener('change', () => {
+        const isChecked = masterCheckbox.checked;
+        threadCheckboxes.forEach(cb => {
+          cb.checked = isChecked;
+          const row = cb.closest('.thread-row');
+          if (row) {
+            if (isChecked) {
+              row.classList.add('bg-[#eaf5ef]');
+            } else {
+              row.classList.remove('bg-[#eaf5ef]');
+            }
+          }
+        });
+      });
+    }
+
+    // Individual Row Checkbox Styling
+    threadCheckboxes.forEach(cb => {
+      cb.addEventListener('change', () => {
+        const row = cb.closest('.thread-row');
+        if (row) {
+          if (cb.checked) {
+            row.classList.add('bg-[#eaf5ef]');
+          } else {
+            row.classList.remove('bg-[#eaf5ef]');
+          }
+        }
+      });
+    });
+
+    // Density Toggle (Comfortable vs Compact)
+    const comfortableBtn = document.getElementById('density-comfortable-btn');
+    const compactBtn = document.getElementById('density-compact-btn');
+    const threadRows = document.querySelectorAll('.thread-row');
+
+    if (comfortableBtn && compactBtn) {
+      comfortableBtn.addEventListener('click', () => {
+        comfortableBtn.classList.add('bg-surface-container-lowest', 'text-on-surface', 'border', 'border-[#dce1d8]');
+        comfortableBtn.classList.remove('text-on-surface-variant');
+        compactBtn.classList.remove('bg-surface-container-lowest', 'text-on-surface', 'border', 'border-[#dce1d8]');
+        compactBtn.classList.add('text-on-surface-variant');
+
+        threadRows.forEach(row => {
+          row.classList.remove('py-1.5');
+          row.classList.add('py-3');
+        });
+      });
+
+      compactBtn.addEventListener('click', () => {
+        compactBtn.classList.add('bg-surface-container-lowest', 'text-on-surface', 'border', 'border-[#dce1d8]');
+        compactBtn.classList.remove('text-on-surface-variant');
+        comfortableBtn.classList.remove('bg-surface-container-lowest', 'text-on-surface', 'border', 'border-[#dce1d8]');
+        comfortableBtn.classList.add('text-on-surface-variant');
+
+        threadRows.forEach(row => {
+          row.classList.remove('py-3');
+          row.classList.add('py-1.5');
+        });
+      });
+    }
+
+    // Mini Composer Controls (Minimize & Close)
+    const composerCloseBtn = document.getElementById('composer-close-btn');
+    const composerMinimizeBtn = document.getElementById('composer-minimize-btn');
+    const composerBody = document.getElementById('composer-body');
+    const miniComposer = document.getElementById('mini-composer');
+
+    if (composerCloseBtn && miniComposer) {
+      composerCloseBtn.addEventListener('click', () => {
+        miniComposer.classList.add('hidden');
+      });
+    }
+
+    if (composerMinimizeBtn && composerBody) {
+      composerMinimizeBtn.addEventListener('click', () => {
+        composerBody.classList.toggle('hidden');
+      });
+    }
+  </script>
+</div></main></div></body></html>
