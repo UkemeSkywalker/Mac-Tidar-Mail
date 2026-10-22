@@ -1,12 +1,11 @@
-"use client";
+import type { Metadata } from "next";
+import { MailLoader } from "../../components/mail/loader";
 
-import { useEffect } from "react";
+export const metadata: Metadata = {
+  title: "Inbox — Mac Tidar Mail",
+  description: "Mac Tidar Mail web app — an interactive demo with local mail data.",
+};
 
-export default function MailDemoRedirect() {
-  useEffect(() => {
-    // Explicit index.html: `next dev` doesn't serve directory indexes from public/, static hosts do.
-    window.location.replace(`/app-demo/index.html${window.location.search}`);
-  }, []);
-
-  return <main className="redirect"><p>Opening Mac Tidar Mail demo…</p></main>;
+export default function MailPage() {
+  return <MailLoader />;
 }

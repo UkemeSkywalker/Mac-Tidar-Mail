@@ -103,3 +103,209 @@ details[open] summary .faq-icon {
   background-color: var(--color-forest);
   color: var(--color-mint);
 }
+
+/* ───────────────────────── Mail app (/app) ─────────────────────────
+   Design source: designs/{inbox,conversation,compose_command_palette}_*.
+   Components use the semantic m-* colours; each .mail-skin-* class supplies the values. */
+@theme inline {
+  --color-m-canvas: var(--m-canvas);
+  --color-m-surface: var(--m-surface);
+  --color-m-lowest: var(--m-lowest);
+  --color-m-card: var(--m-card);
+  --color-m-low: var(--m-low);
+  --color-m-mid: var(--m-mid);
+  --color-m-high: var(--m-high);
+  --color-m-highest: var(--m-highest);
+  --color-m-text: var(--m-text);
+  --color-m-muted: var(--m-muted);
+  --color-m-faint: var(--m-faint);
+  --color-m-outline: var(--m-outline);
+  --color-m-line: var(--m-line);
+  --color-m-primary: var(--m-primary);
+  --color-m-brand: var(--m-brand);
+  --color-m-brand-hover: var(--m-brand-hover);
+  --color-m-on-brand: var(--m-on-brand);
+  --color-m-brand-soft: var(--m-brand-soft);
+  --color-m-secondary: var(--m-secondary);
+  --color-m-success: var(--m-success);
+  --color-m-success-text: var(--m-success-text);
+  --color-m-error: var(--m-error);
+  --color-m-error-soft: var(--m-error-soft);
+  --color-m-on-error-soft: var(--m-on-error-soft);
+  --color-m-star: var(--m-star);
+  --color-m-header: var(--m-header);
+  --color-m-header-line: var(--m-header-line);
+  --color-m-sb: var(--m-sb);
+  --color-m-sb-line: var(--m-sb-line);
+  --color-m-sb-text: var(--m-sb-text);
+  --color-m-sb-muted: var(--m-sb-muted);
+  --color-m-sb-strong: var(--m-sb-strong);
+  --color-m-sb-hover: var(--m-sb-hover);
+  --color-m-sb-active: var(--m-sb-active);
+  --color-m-sb-active-text: var(--m-sb-active-text);
+  --color-m-sb-footer: var(--m-sb-footer);
+  --color-m-sb-track: var(--m-sb-track);
+  --color-m-sb-cta: var(--m-sb-cta);
+  --color-m-sb-cta-text: var(--m-sb-cta-text);
+  --color-m-sb-cta-hover: var(--m-sb-cta-hover);
+  --color-m-sb-badge: var(--m-sb-badge);
+  --color-m-sb-badge-text: var(--m-sb-badge-text);
+  --color-m-sb-pill: var(--m-sb-pill);
+  --color-m-sb-pill-text: var(--m-sb-pill-text);
+  --color-m-suite: var(--m-suite);
+  --color-m-suite-text: var(--m-suite-text);
+  --font-m-head: var(--font-geist), "Inter", system-ui, sans-serif;
+  --font-m-body: var(--font-inter), system-ui, sans-serif;
+}
+
+@theme {
+  --spacing-gutter: 0.75rem;
+  --spacing-gutter-md: 1rem;
+  --spacing-gutter-lg: 1.5rem;
+  --spacing-space-xs: 0.25rem;
+  --spacing-space-sm: 0.5rem;
+  --spacing-space-md: 0.75rem;
+  --spacing-space-lg: 1.25rem;
+  --spacing-space-xl: 2rem;
+  --spacing-margin-md: 1.5rem;
+  --spacing-margin-lg: 2rem;
+  --radius-m: 0.125rem;
+  --radius-m-lg: 0.25rem;
+  --radius-m-xl: 0.5rem;
+  --radius-m-pill: 0.75rem;
+}
+
+/* Type scale from the designs: each utility sets family, size, line-height, tracking and weight. */
+@utility t-display { font-family: var(--font-m-head); font-size: 32px; line-height: 40px; letter-spacing: -0.025em; font-weight: 600; }
+@utility t-headline-lg { font-family: var(--font-m-head); font-size: 24px; line-height: 32px; letter-spacing: -0.02em; font-weight: 600; }
+@utility t-headline-md { font-family: var(--font-m-head); font-size: 18px; line-height: 24px; letter-spacing: -0.015em; font-weight: 500; }
+@utility t-headline-sm { font-family: var(--font-m-head); font-size: 15px; line-height: 20px; letter-spacing: -0.01em; font-weight: 500; }
+@utility t-body-lg { font-family: var(--font-m-body); font-size: 15px; line-height: 24px; letter-spacing: -0.005em; font-weight: 400; }
+@utility t-body-md { font-family: var(--font-m-body); font-size: 13px; line-height: 20px; letter-spacing: 0; font-weight: 400; }
+@utility t-body-sm { font-family: var(--font-m-body); font-size: 12px; line-height: 16px; letter-spacing: 0.005em; font-weight: 400; }
+@utility t-label-md { font-family: var(--font-m-body); font-size: 12px; line-height: 16px; letter-spacing: 0.01em; font-weight: 500; }
+@utility t-label-sm { font-family: var(--font-m-body); font-size: 11px; line-height: 14px; letter-spacing: 0.02em; font-weight: 500; }
+@utility t-code { font-family: var(--font-m-head); font-size: 11px; line-height: 12px; letter-spacing: 0.05em; font-weight: 500; }
+
+.ms-fill { font-variation-settings: "FILL" 1; }
+.mail-root ::-webkit-scrollbar { width: 0; height: 0; }
+
+/* Mac Tidar Indigo — designs/*_mac_tidar_mail, conversation_q3_product_roadmap */
+.mail-skin-cobalt {
+  color-scheme: light;
+  --m-canvas: #f8f9ff; --m-surface: #f8f9ff; --m-lowest: #ffffff; --m-card: #ffffff; --m-low: #eff4ff; --m-mid: #e5eeff; --m-high: #dce9ff; --m-highest: #d3e4fe;
+  --m-text: #0b1c30; --m-muted: #464555; --m-faint: #c7c4d8; --m-outline: #777587; --m-line: #e5eeff;
+  --m-primary: #3525cd; --m-brand: #4f46e5; --m-brand-hover: #3525cd; --m-on-brand: #ffffff; --m-brand-soft: rgb(53 37 205 / 0.1); --m-secondary: #4648d4;
+  --m-success: #006e4b; --m-success-text: #006e4b; --m-error: #ba1a1a; --m-error-soft: #ffdad6; --m-on-error-soft: #93000a; --m-star: #f59e0b;
+  --m-header: rgb(248 249 255 / 0.8); --m-header-line: transparent;
+  --m-sb: #eff4ff; --m-sb-line: transparent; --m-sb-text: #464555; --m-sb-muted: #464555; --m-sb-strong: #0b1c30; --m-sb-hover: #e5eeff; --m-sb-active: #dce9ff; --m-sb-active-text: #0b1c30;
+  --m-sb-footer: #e5eeff; --m-sb-track: #dce9ff; --m-sb-cta: #4f46e5; --m-sb-cta-text: #ffffff; --m-sb-cta-hover: #3525cd; --m-sb-badge: #4f46e5; --m-sb-badge-text: #ffffff; --m-sb-pill: #dce9ff; --m-sb-pill-text: #0b1c30;
+  --m-suite: #e1e0ff; --m-suite-text: #07006c;
+  --chip-product-bg: #e1e0ff; --chip-product-fg: #07006c; --dot-product: #4648d4;
+  --chip-engineering-bg: #6ffbbe; --chip-engineering-fg: #002113; --dot-engineering: #3525cd;
+  --chip-investors-bg: rgb(0 110 75 / 0.1); --chip-investors-fg: #005338; --dot-investors: #005338;
+  --chip-design-bg: #c0c1ff; --chip-design-fg: #07006c; --dot-design: #6063ee;
+  --chip-invoices-bg: #e2dfff; --chip-invoices-fg: #0f0069; --dot-invoices: #006e4b;
+  --chip-security-bg: rgb(186 26 26 / 0.9); --chip-security-fg: #ffffff; --dot-security: #ba1a1a;
+  --chip-urgent-bg: #ffdad6; --chip-urgent-fg: #ba1a1a;
+}
+
+/* Botanical Forest Mint — designs/*_botanical_forest_mint_edition */
+.mail-skin-forest {
+  color-scheme: light;
+  --m-canvas: #f9faf1; --m-surface: #fcfdfa; --m-lowest: #ffffff; --m-card: #ffffff; --m-low: #f3f4ec; --m-mid: #edefe6; --m-high: #e7e9e0; --m-highest: #e2e3db;
+  --m-text: #191c17; --m-muted: #3f4943; --m-faint: #bfc9c1; --m-outline: #6f7973; --m-line: #dce1d8;
+  --m-primary: #216b4d; --m-brand: #216b4d; --m-brand-hover: #005237; --m-on-brand: #ffffff; --m-brand-soft: rgb(33 107 77 / 0.15); --m-secondary: #046c48;
+  --m-success: #10b981; --m-success-text: #046c48; --m-error: #ba1a1a; --m-error-soft: #ffdad6; --m-on-error-soft: #93000a; --m-star: #f59e0b;
+  --m-header: rgb(244 245 238 / 0.95); --m-header-line: #e2e6dd;
+  --m-sb: #153e2d; --m-sb-line: #103224; --m-sb-text: #b8d9c8; --m-sb-muted: #88b9a1; --m-sb-strong: #ffffff; --m-sb-hover: #1a4734; --m-sb-active: #1f543f; --m-sb-active-text: #ffffff;
+  --m-sb-footer: #0f2e21; --m-sb-track: #1b4734; --m-sb-cta: #8ce2b5; --m-sb-cta-text: #0f2e21; --m-sb-cta-hover: #a3ebc7; --m-sb-badge: #8ce2b5; --m-sb-badge-text: #0f2e21; --m-sb-pill: #1b4734; --m-sb-pill-text: #b8d9c8;
+  --m-suite: #8ce2b5; --m-suite-text: #0f2e21;
+  --chip-product-bg: #d7f3e4; --chip-product-fg: #046c48; --dot-product: #8ce2b5;
+  --chip-engineering-bg: #cbeedc; --chip-engineering-fg: #005237; --dot-engineering: #10b981;
+  --chip-investors-bg: #e1f7ec; --chip-investors-fg: #0f714c; --dot-investors: #34d399;
+  --chip-design-bg: #d9f5e6; --chip-design-fg: #046c48; --dot-design: #5eead4;
+  --chip-invoices-bg: #fef3c7; --chip-invoices-fg: #78350f; --dot-invoices: #fbbf24;
+  --chip-security-bg: #fee2e2; --chip-security-fg: #991b1b; --dot-security: #f87171;
+  --chip-urgent-bg: #ffdad6; --chip-urgent-fg: #ba1a1a;
+}
+
+/* Botanical Clay Sage — designs/conversation_botanical_clay_sage_edition */
+.mail-skin-botanical {
+  color-scheme: light;
+  --m-canvas: #f7f6f0; --m-surface: #fcfbf8; --m-lowest: #ffffff; --m-card: #ffffff; --m-low: #f2f0e6; --m-mid: #eceae0; --m-high: #e3e0d5; --m-highest: #e5e3d8;
+  --m-text: #19241e; --m-muted: #5e6860; --m-faint: #c4c7bb; --m-outline: #8a968d; --m-line: #e3e0d5;
+  --m-primary: #216b4d; --m-brand: #216b4d; --m-brand-hover: #1a5b40; --m-on-brand: #ffffff; --m-brand-soft: #ebf7f0; --m-secondary: #c25e34;
+  --m-success: #2f9e6e; --m-success-text: #1a5b40; --m-error: #ba1a1a; --m-error-soft: #fbe8e6; --m-on-error-soft: #7c1d13; --m-star: #f59e0b;
+  --m-header: rgb(252 251 248 / 0.9); --m-header-line: #e3e0d5;
+  --m-sb: #153e2d; --m-sb-line: #1e523c; --m-sb-text: #b8d6c7; --m-sb-muted: #88aa98; --m-sb-strong: #e0efe6; --m-sb-hover: #1b4a36; --m-sb-active: #215a41; --m-sb-active-text: #ffffff;
+  --m-sb-footer: #10301f; --m-sb-track: #1b4a36; --m-sb-cta: #8ce2b5; --m-sb-cta-text: #0a291a; --m-sb-cta-hover: #a0ecc7; --m-sb-badge: #8ce2b5; --m-sb-badge-text: #0a291a; --m-sb-pill: #1b4a36; --m-sb-pill-text: #d6ede2;
+  --m-suite: #f9ece5; --m-suite-text: #8c3814;
+  --chip-product-bg: #f9ece5; --chip-product-fg: #8c3814; --dot-product: #c25e34;
+  --chip-engineering-bg: #ebf7f0; --chip-engineering-fg: #1a5b40; --dot-engineering: #216b4d;
+  --chip-investors-bg: #e9efe1; --chip-investors-fg: #3d5a2a; --dot-investors: #6b8f4e;
+  --chip-design-bg: #ede7db; --chip-design-fg: #5e5240; --dot-design: #a08a68;
+  --chip-invoices-bg: #fbf1d9; --chip-invoices-fg: #7a5410; --dot-invoices: #d4a03a;
+  --chip-security-bg: #fbe8e6; --chip-security-fg: #7c1d13; --dot-security: #ba1a1a;
+  --chip-urgent-bg: #fbe8e6; --chip-urgent-fg: #ba1a1a;
+}
+
+/* Cyber Obsidian Electric Amber — designs/*_cyber_obsidian_electric_amber_edition */
+.mail-skin-cyber {
+  color-scheme: dark;
+  --m-canvas: #080b11; --m-surface: #0d1117; --m-lowest: #080b11; --m-card: #161b22; --m-low: #161b22; --m-mid: #161e2e; --m-high: #1e293b; --m-highest: #1f2937;
+  --m-text: #f8fafc; --m-muted: #94a3b8; --m-faint: #475569; --m-outline: #64748b; --m-line: #1f2937;
+  --m-primary: #f59e0b; --m-brand: #f59e0b; --m-brand-hover: #d97706; --m-on-brand: #090d16; --m-brand-soft: rgb(245 158 11 / 0.1); --m-secondary: #fbbf24;
+  --m-success: #10b981; --m-success-text: #34d399; --m-error: #f87171; --m-error-soft: rgb(69 10 10 / 0.5); --m-on-error-soft: #fca5a5; --m-star: #fbbf24;
+  --m-header: #0d1117; --m-header-line: #1f2937;
+  --m-sb: #0d1117; --m-sb-line: #1f2937; --m-sb-text: #94a3b8; --m-sb-muted: #64748b; --m-sb-strong: #f8fafc; --m-sb-hover: #161b22; --m-sb-active: #161e2e; --m-sb-active-text: #f8fafc;
+  --m-sb-footer: #090d16; --m-sb-track: #1f2937; --m-sb-cta: #f59e0b; --m-sb-cta-text: #090d16; --m-sb-cta-hover: #d97706; --m-sb-badge: #f59e0b; --m-sb-badge-text: #090d16; --m-sb-pill: #1e293b; --m-sb-pill-text: #cbd5e1;
+  --m-suite: #1e293b; --m-suite-text: #f59e0b;
+  --chip-product-bg: rgb(49 46 129 / 0.4); --chip-product-fg: #818cf8; --dot-product: #6366f1;
+  --chip-engineering-bg: rgb(6 78 59 / 0.5); --chip-engineering-fg: #34d399; --dot-engineering: #10b981;
+  --chip-investors-bg: rgb(120 53 15 / 0.4); --chip-investors-fg: #f59e0b; --dot-investors: #f59e0b;
+  --chip-design-bg: rgb(88 28 135 / 0.4); --chip-design-fg: #c084fc; --dot-design: #a855f7;
+  --chip-invoices-bg: rgb(12 74 110 / 0.4); --chip-invoices-fg: #38bdf8; --dot-invoices: #06b6d4;
+  --chip-security-bg: rgb(69 10 10 / 0.5); --chip-security-fg: #f87171; --dot-security: #ef4444;
+  --chip-urgent-bg: rgb(69 10 10 / 0.5); --chip-urgent-fg: #f87171;
+}
+
+/* Warm Espresso — derived from the homepage Amber skin (#a55e1d / #24150c) */
+.mail-skin-amber {
+  color-scheme: light;
+  --m-canvas: #fdf8f0; --m-surface: #fffcf7; --m-lowest: #ffffff; --m-card: #ffffff; --m-low: #f8f0e4; --m-mid: #f2e7d7; --m-high: #eadcc8; --m-highest: #e3d2ba;
+  --m-text: #24150c; --m-muted: #6b5444; --m-faint: #cdb9a3; --m-outline: #9a826e; --m-line: #eadcc8;
+  --m-primary: #a55e1d; --m-brand: #a55e1d; --m-brand-hover: #663411; --m-on-brand: #ffffff; --m-brand-soft: rgb(165 94 29 / 0.12); --m-secondary: #8a4b16;
+  --m-success: #4d8a4a; --m-success-text: #3d7a3a; --m-error: #b3261e; --m-error-soft: #fbe3dc; --m-on-error-soft: #7a1a12; --m-star: #e09a2b;
+  --m-header: rgb(253 248 240 / 0.92); --m-header-line: #eadcc8;
+  --m-sb: #24150c; --m-sb-line: #331f12; --m-sb-text: #d9c3ad; --m-sb-muted: #a88d76; --m-sb-strong: #fff7ee; --m-sb-hover: #33200f; --m-sb-active: #42291a; --m-sb-active-text: #ffffff;
+  --m-sb-footer: #1a0f08; --m-sb-track: #3a2414; --m-sb-cta: #ffd28b; --m-sb-cta-text: #24150c; --m-sb-cta-hover: #ffdea6; --m-sb-badge: #ffd28b; --m-sb-badge-text: #24150c; --m-sb-pill: #3a2414; --m-sb-pill-text: #e8d5c0;
+  --m-suite: #ffd28b; --m-suite-text: #24150c;
+  --chip-product-bg: #f6e3cf; --chip-product-fg: #7a3f10; --dot-product: #a55e1d;
+  --chip-engineering-bg: #e4efdc; --chip-engineering-fg: #2f5a2c; --dot-engineering: #4d8a4a;
+  --chip-investors-bg: #fbecc8; --chip-investors-fg: #6e4a07; --dot-investors: #d29a24;
+  --chip-design-bg: #f3dfe4; --chip-design-fg: #7a2f45; --dot-design: #b5576f;
+  --chip-invoices-bg: #e2ecf3; --chip-invoices-fg: #24506b; --dot-invoices: #3d7aa0;
+  --chip-security-bg: #fbe3dc; --chip-security-fg: #9b2318; --dot-security: #c0392b;
+  --chip-urgent-bg: #fbe3dc; --chip-urgent-fg: #b3261e;
+}
+
+/* Warm Modern — derived from the homepage Editorial skin (#9a5149 / #2a1716) */
+.mail-skin-editorial {
+  color-scheme: light;
+  --m-canvas: #fcf8f5; --m-surface: #fffbf8; --m-lowest: #ffffff; --m-card: #ffffff; --m-low: #f8efea; --m-mid: #f2e4dd; --m-high: #eadcd6; --m-highest: #e2cfc7;
+  --m-text: #2a1716; --m-muted: #6a5250; --m-faint: #d4bfb8; --m-outline: #9b827d; --m-line: #eadcd6;
+  --m-primary: #9a5149; --m-brand: #9a5149; --m-brand-hover: #5d2f2a; --m-on-brand: #ffffff; --m-brand-soft: rgb(154 81 73 / 0.1); --m-secondary: #7c4a6b;
+  --m-success: #3f8a6a; --m-success-text: #2f6f54; --m-error: #b3261e; --m-error-soft: #fbe1dd; --m-on-error-soft: #7a1a12; --m-star: #e0962b;
+  --m-header: rgb(252 248 245 / 0.85); --m-header-line: transparent;
+  --m-sb: #f8efea; --m-sb-line: transparent; --m-sb-text: #6a5250; --m-sb-muted: #9b827d; --m-sb-strong: #2a1716; --m-sb-hover: #f2e4dd; --m-sb-active: #eadcd6; --m-sb-active-text: #2a1716;
+  --m-sb-footer: #f2e4dd; --m-sb-track: #eadcd6; --m-sb-cta: #9a5149; --m-sb-cta-text: #ffffff; --m-sb-cta-hover: #5d2f2a; --m-sb-badge: #9a5149; --m-sb-badge-text: #ffffff; --m-sb-pill: #eadcd6; --m-sb-pill-text: #2a1716;
+  --m-suite: #f3c6b9; --m-suite-text: #5d2f2a;
+  --chip-product-bg: #f6dcd6; --chip-product-fg: #5d2f2a; --dot-product: #9a5149;
+  --chip-engineering-bg: #dcefe6; --chip-engineering-fg: #24563f; --dot-engineering: #3f8a6a;
+  --chip-investors-bg: #f7e7c9; --chip-investors-fg: #6a4a0a; --dot-investors: #c99a2e;
+  --chip-design-bg: #ead9ea; --chip-design-fg: #5e2f60; --dot-design: #8a5a8c;
+  --chip-invoices-bg: #dde7f2; --chip-invoices-fg: #24456b; --dot-invoices: #44709e;
+  --chip-security-bg: #fbe1dd; --chip-security-fg: #9b2318; --dot-security: #c0392b;
+  --chip-urgent-bg: #fbe1dd; --chip-urgent-fg: #b3261e;
+}
