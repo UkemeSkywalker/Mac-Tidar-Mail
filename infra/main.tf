@@ -44,3 +44,20 @@ module "monitoring" {
   monthly_budget_usd = var.monthly_budget_usd
   kms_key_arn        = module.kms.data_key_arn
 }
+
+module "inbound" {
+  source                = "./modules/inbound"
+  account_id            = local.account_id
+  region                = var.region
+  receipt_rule_set_name = local.receipt_rule_set_name
+  receiving_domains     = var.receiving_domains
+  local_domains         = [var.root_domain]
+  bucket_name           = module.storage.bucket_name
+  bucket_arn            = module.storage.bucket_arn
+  table_name            = module.table.table_name
+  table_arn             = module.table.table_arn
+  raw_mail_key_arn      = module.kms.raw_mail_key_arn
+  data_key_arn          = module.kms.data_key_arn
+  alerts_topic_arn      = module.monitoring.alerts_topic_arn
+  lambda_source_dir     = "${path.root}/../services/mail/dist/inbound"
+}
