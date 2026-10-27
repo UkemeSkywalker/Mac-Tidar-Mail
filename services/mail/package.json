@@ -19,6 +19,7 @@
     "@aws-sdk/client-kms": "3.1156.0",
     "@aws-sdk/client-s3": "3.1156.0",
     "@aws-sdk/lib-dynamodb": "3.1156.0",
+    "@aws-sdk/s3-request-presigner": "3.1156.0",
     "mailparser": "3.12.4",
     "openpgp": "6.3.2"
   },

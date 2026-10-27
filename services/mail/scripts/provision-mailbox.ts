@@ -8,7 +8,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { generateMailboxKey, lockPrivateKey, normalizeAddress } from "../src/crypto";
-import { mailboxPk, META_SK, type MailboxMeta } from "../src/shared/table";
+import { mailboxPk, META_SK, ownerGsi1, type MailboxMeta } from "../src/shared/table";
 import { args, ddb, REGION, TABLE } from "./_aws";
 
 const POOL = process.env.COGNITO_USER_POOL_ID ?? "af-south-1_378A7d9Bp";
@@ -24,7 +24,7 @@ if (Users.length !== 1) throw new Error(`Expected exactly one Cloud account for 
 const ownerSub = Users[0]!.Attributes?.find(x => x.Name === "sub")?.Value;
 if (!ownerSub) throw new Error("Cloud account has no sub");
 
-const meta: MailboxMeta = { pk: mailboxPk(address), sk: META_SK, address, ownerSub, displayName: a.name ?? address.split("@")[0]!, status: "active", createdAt: new Date().toISOString() };
+const meta: MailboxMeta = { pk: mailboxPk(address), sk: META_SK, gsi1pk: ownerGsi1(ownerSub), gsi1sk: mailboxPk(address), address, ownerSub, displayName: a.name ?? address.split("@")[0]!, status: "active", createdAt: new Date().toISOString() };
 
 if (a["test-key-dir"]) {
   const dir = resolve(a["test-key-dir"]);
@@ -33,6 +33,7 @@ if (a["test-key-dir"]) {
   const passphrase = randomBytes(32).toString("hex");
   const locked = await lockPrivateKey(key.privateKey, passphrase);
   meta.keyState = { version: 1, address, primaryFingerprint: key.fingerprint, keys: [{ fingerprint: key.fingerprint, publicKey: key.publicKey, privateKey: locked, status: "active", createdAt: meta.createdAt }], recovery: null };
+  meta.keyVersion = 1;
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const file = join(dir, `${address}.test-key.json`);
   writeFileSync(file, JSON.stringify({ address, fingerprint: key.fingerprint, privateKey: locked, passphrase }), { mode: 0o600 });

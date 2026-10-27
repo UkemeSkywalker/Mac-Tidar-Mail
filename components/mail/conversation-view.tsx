@@ -54,7 +54,7 @@ function Q3RoadmapBody() {
 const eml = (m: Message) => [`From: ${m.from.name} <${m.from.email}>`, `To: ${m.to.map(p => `${p.name} <${p.email}>`).join(", ")}`, `Date: ${new Date(m.date).toUTCString()}`, `Subject: ${m.subject}`, "Content-Type: text/plain; charset=utf-8", "", m.body].join("\r\n");
 
 function MessageCard({ m, me, onReply, onReplyAll }: { m: Message; me: string; onReply: () => void; onReplyAll: () => void }) {
-  const { compose, toggleStar, box } = useMail();
+  const { compose, toggleStar, box, downloadAttachment } = useMail();
   const [menu, setMenu] = useState(false);
   const [raw, setRaw] = useState(false);
   const thread = box.messages.filter(x => x.thread === m.thread);
@@ -102,14 +102,17 @@ function MessageCard({ m, me, onReply, onReplyAll }: { m: Message; me: string; o
       </div>
       {raw && <pre className="mx-space-lg mt-space-md p-space-md rounded-m-xl bg-m-low text-m-muted t-body-sm whitespace-pre-wrap break-words font-mono">{eml(m)}</pre>}
       <div className="p-space-lg space-y-space-md text-m-text t-body-lg leading-relaxed">
-        {m.rich === "q3-roadmap" ? <Q3RoadmapBody /> : m.body.split(/\n{2,}/).map((p, i) => <p key={i} className="whitespace-pre-line">{p}</p>)}
+        {m.locked ? <p className="flex items-center gap-2 text-m-muted"><Icon name="lock" className="text-[18px]" />This message is encrypted to an older key. Recover your older keys (Settings → Accounts) to read it.</p>
+          : m.bodyState === "loading" ? <p className="flex items-center gap-2 text-m-muted"><span className="w-3.5 h-3.5 rounded-full border-2 border-m-brand border-t-transparent animate-spin" />Decrypting…</p>
+          : m.bodyState === "error" ? <p className="text-m-error">Couldn’t decrypt this message.</p>
+          : m.rich === "q3-roadmap" ? <Q3RoadmapBody /> : m.body.split(/\n{2,}/).map((p, i) => <p key={i} className="whitespace-pre-line break-words">{p}</p>)}
       </div>
       {total > 0 && (
         <div className="p-space-lg bg-m-low/40 space-y-space-sm">
           <div className="flex items-center gap-2 text-m-muted t-headline-sm font-medium"><Icon name="attachment" className="text-[18px]" /><span>{total} Attachment{total > 1 ? "s" : ""}</span></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-space-sm">
-            {m.attachments.map(a => (
-              <div key={a.name} className="p-space-sm rounded-m-xl bg-m-card shadow-xs hover:shadow-md transition-shadow flex items-center justify-between gap-space-sm border border-m-line/60">
+            {m.attachments.map((a, i) => (
+              <div key={`${a.name}-${i}`} className="p-space-sm rounded-m-xl bg-m-card shadow-xs hover:shadow-md transition-shadow flex items-center justify-between gap-space-sm border border-m-line/60">
                 <div className="flex items-center gap-space-sm min-w-0">
                   <div className="w-10 h-10 rounded-m-lg flex items-center justify-center shrink-0" style={a.icon === "picture_as_pdf" ? { background: "var(--m-error-soft)", color: "var(--m-on-error-soft)" } : { background: "var(--chip-engineering-bg)", color: "var(--chip-engineering-fg)" }}>
                     <Icon name={a.icon} className="text-[22px]" />
@@ -117,8 +120,9 @@ function MessageCard({ m, me, onReply, onReplyAll }: { m: Message; me: string; o
                   <div className="min-w-0"><div className="t-headline-sm text-m-text font-medium truncate">{a.name}</div><div className="t-label-sm text-m-muted">{a.size}</div></div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  <IconButton icon="visibility" title="Preview isn’t available in the demo" disabled />
-                  <IconButton icon="download" title="Downloads aren’t available in the demo" disabled />
+                  {m.ref
+                    ? <IconButton icon="download" title="Decrypt and download" onClick={() => downloadAttachment(m, i)} />
+                    : <IconButton icon="download" title="Downloads aren’t available in the demo" disabled />}
                 </div>
               </div>
             ))}

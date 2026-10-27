@@ -27,6 +27,12 @@ export type Message = {
   scheduledAt?: string | null;
   labels: string[];
   attachments: Attachment[];
+  /** Live mode: the server's message key; absent for demo data and local-only drafts. */
+  ref?: string;
+  /** Live mode: `preview` until the encrypted body has been fetched and decrypted. */
+  bodyState?: "preview" | "loading" | "loaded" | "error";
+  /** Live mode: encrypted to a key this session can't open (e.g. locked after a password reset). */
+  locked?: boolean;
 };
 
 export type Settings = { density: "comfortable" | "compact"; signature: string; notifications: boolean };

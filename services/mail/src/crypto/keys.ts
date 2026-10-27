@@ -94,3 +94,12 @@ export async function parseUnlockedKey(bytes: Uint8Array): Promise<PrivateKey> {
   if (!key.isDecrypted()) throw new Error("Expected an unlocked private key");
   return key;
 }
+
+/**
+ * Server-side check for uploaded key material: returns the fingerprint and whether the
+ * private key is still passphrase-protected. Never decrypts anything.
+ */
+export async function inspectPrivateKey(armored: string): Promise<{ fingerprint: string; locked: boolean }> {
+  const key = await openpgp.readPrivateKey({ armoredKey: armored, config: readConfig });
+  return { fingerprint: key.getFingerprint(), locked: !key.isDecrypted() };
+}

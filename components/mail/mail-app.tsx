@@ -9,6 +9,8 @@ import { Dialogs } from "./dialogs";
 import { InboxView, ShortcutBar } from "./inbox-view";
 import { Sidebar } from "./sidebar";
 import { MAIL_SKINS } from "./skins";
+import { liveEnabled } from "./live/config";
+import { LiveGate, useLiveSession } from "./live/gate";
 import { MailProvider, useMail } from "./store";
 import { Topbar } from "./topbar";
 import { Icon } from "./ui";
@@ -43,7 +45,7 @@ function Shell() {
   useEffect(() => {
     const p = new URLSearchParams(location.search);
     const mode = p.get("mode"), thread = p.get("thread");
-    if (mode === "signin" || mode === "signup") setDialog({ kind: "auth", mode });
+    if (!mail.live && (mode === "signin" || mode === "signup")) setDialog({ kind: "auth", mode });
     if (thread) openThread(thread);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -114,6 +116,12 @@ function Shell() {
   );
 }
 
+function LiveMail() {
+  const live = useLiveSession();
+  return <MailProvider live={live}><Shell /></MailProvider>;
+}
+
 export default function MailApp() {
+  if (liveEnabled) return <LiveGate><LiveMail /></LiveGate>;
   return <MailProvider><Shell /></MailProvider>;
 }

@@ -61,3 +61,18 @@ module "inbound" {
   alerts_topic_arn      = module.monitoring.alerts_topic_arn
   lambda_source_dir     = "${path.root}/../services/mail/dist/inbound"
 }
+
+module "api" {
+  source            = "./modules/api"
+  region            = var.region
+  user_pool_id      = var.cognito_user_pool_id
+  client_id         = module.auth_client.client_id
+  app_origins       = var.app_origins
+  bucket_name       = module.storage.bucket_name
+  bucket_arn        = module.storage.bucket_arn
+  table_name        = module.table.table_name
+  table_arn         = module.table.table_arn
+  data_key_arn      = module.kms.data_key_arn
+  alerts_topic_arn  = module.monitoring.alerts_topic_arn
+  lambda_source_dir = "${path.root}/../services/mail/dist/api"
+}
