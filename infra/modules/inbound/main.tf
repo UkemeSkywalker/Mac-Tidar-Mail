@@ -25,7 +25,7 @@ data "archive_file" "inbound" {
   type        = "zip"
   source_dir  = var.lambda_source_dir
   output_path = "${path.root}/.build/inbound.zip"
-  excludes    = ["index.js.map"]
+  excludes    = ["index.mjs.map"]
 }
 
 resource "aws_cloudwatch_log_group" "inbound" {
