@@ -41,6 +41,8 @@ export type Message = {
   locked?: boolean;
   rfcMessageId?: string | null;
   references?: string[];
+  /** Live mode: a display name that impersonated another sender and was replaced by the real address. */
+  hiddenName?: string;
   /** Mac Tidar → Mac Tidar mail, encrypted in the sender's browser. */
   e2e?: boolean;
   /** Result of checking the sender's signature on end-to-end mail. */

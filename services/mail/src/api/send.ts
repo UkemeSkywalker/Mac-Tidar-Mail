@@ -77,7 +77,7 @@ export async function sendMessage(deps: SendDeps, sender: MailboxMeta, req: Send
       const mime = await new MailComposer({
         from: { name: sender.displayName.replace(/[\r\n"]/g, ""), address: sender.address },
         to: req.to, cc: req.cc.length ? req.cc : undefined,
-        subject: req.subject, text: req.external.text, html: req.external.html,
+        subject: req.external.subject, text: req.external.text, html: req.external.html,
         messageId: rfcMessageId, date: now,
         inReplyTo: req.inReplyTo, references: references.length ? references : undefined,
         attachments: req.external.attachments.map(a => ({ filename: a.filename, contentType: a.contentType, content: a.content })),
@@ -111,7 +111,9 @@ export async function sendMessage(deps: SendDeps, sender: MailboxMeta, req: Send
         size: c.body.byteLength + c.attachments.reduce((n, a) => n + a.byteLength, 0),
         read: folder === "sent", starred: false, labels: [], encVersion: 1, keyFingerprint: c.keyFingerprint,
         header: c.header, bodyKey, attachmentKeys,
-        verdicts: { spam: "PASS", virus: "PASS", spf: "PASS", dkim: "PASS", dmarc: "PASS" }, ...extra,
+        // Content is end-to-end encrypted, so it can't be scanned here; the sender is authenticated by
+        // their Mac Tidar sign-in. The recipient's browser warns before opening risky attachments.
+        verdicts: { spam: "NOT_SCANNED", virus: "NOT_SCANNED", spf: "INTERNAL", dkim: "INTERNAL", dmarc: "INTERNAL" }, ...extra,
       };
       await ddb.send(new PutCommand({ TableName: table, Item: item }));
       return item;

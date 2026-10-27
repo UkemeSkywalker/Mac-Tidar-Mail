@@ -13,8 +13,8 @@ export interface ServerMessage {
 }
 export interface CipherPayload { header: string; body: string; attachments: string[]; keyFingerprint: string }
 export interface SendPayload {
-  clientId: string; to: string[]; cc: string[]; bcc: string[]; subject: string; inReplyTo?: string; references?: string[];
-  external?: { text: string; attachments: { filename: string; contentType: string; content: string }[] };
+  clientId: string; to: string[]; cc: string[]; bcc: string[]; inReplyTo?: string; references?: string[];
+  external?: { subject: string; text: string; attachments: { filename: string; contentType: string; content: string }[] };
   internal: (CipherPayload & { address: string })[];
   sentCopy: CipherPayload;
 }

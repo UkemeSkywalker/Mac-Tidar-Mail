@@ -4,6 +4,7 @@ import { decryptBlob, encryptBlob } from "../crypto/core";
 import type { MailboxSession } from "../crypto";
 import type { Label, LabelTone, Message, Person, Settings } from "../data";
 import type { ServerMessage } from "./api";
+import { misleadingName } from "./trust";
 
 export interface LiveLabel { id: string; name: string; tone: LabelTone }
 export interface LiveSettings { v: 1; labels: LiveLabel[]; signature: string; density: Settings["density"]; notifications: boolean }
@@ -37,6 +38,13 @@ const fmtSize = (bytes: number) => bytes >= 1_048_576 ? `${(bytes / 1_048_576).t
 const iconFor = (type: string, name: string) =>
   type.includes("pdf") ? "picture_as_pdf" : type.startsWith("image/") ? "image" : /csv|sheet|excel/.test(type) || /\.(csv|xlsx?)$/i.test(name) ? "table_chart" : type.includes("json") ? "data_object" : "description";
 
+/** The sender's chosen name, unless it impersonates another address; then the real address is shown. */
+function sender(name: string | undefined, email: string): Pick<Message, "from" | "hiddenName"> {
+  const n = name?.trim();
+  if (!n) return { from: { name: email, email } };
+  return misleadingName(n, email) ? { from: { name: email, email }, hiddenName: n } : { from: { name: n, email } };
+}
+
 export async function toMessage(item: ServerMessage, session: MailboxSession, labelNames: Map<string, string>): Promise<Message> {
   let header: Awaited<ReturnType<MailboxSession["decryptHeader"]>>["header"] | null = null;
   try { header = (await session.decryptHeader(item.header)).header; } catch { header = null; }
@@ -48,7 +56,7 @@ export async function toMessage(item: ServerMessage, session: MailboxSession, la
     kind: "message",
     folder: item.folder,
     category: item.category,
-    from: { name: header?.fromName || item.fromAddress, email: item.fromAddress },
+    ...sender(header?.fromName, item.fromAddress),
     to: item.toAddresses.map(person),
     cc: item.ccAddresses.map(person),
     subject: header ? header.subject || "(no subject)" : "Locked message",

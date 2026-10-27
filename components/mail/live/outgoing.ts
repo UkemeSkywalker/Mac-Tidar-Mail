@@ -5,6 +5,7 @@ import { encryptAttachment, readPublicKey } from "../crypto/core";
 import type { MailboxSession } from "../crypto";
 import type { Message } from "../data";
 import { mailApi, type CipherPayload, type SendPayload } from "./api";
+import { isRiskyFile } from "./trust";
 
 export interface OutgoingDraft {
   id: string;
@@ -25,6 +26,8 @@ const b64 = (bytes: Uint8Array) => {
 export async function buildSend(session: MailboxSession, address: string, displayName: string, d: OutgoingDraft): Promise<SendPayload> {
   const total = d.attachments.reduce((n, a) => n + a.data.byteLength, 0);
   if (total > MAX_ATTACHMENT_BYTES) throw new Error("Attachments are limited to 2 MB per message for now");
+  const risky = d.attachments.find(a => isRiskyFile(a.name));
+  if (risky) throw new Error(`“${risky.name}” is a file type that can run code, so it can’t be sent. Zip it or share it another way.`);
 
   const recipients = [...new Set([...d.to, ...d.cc].map(a => a.trim().toLowerCase()))];
   const keys = await Promise.all(recipients.map(async a => [a, await mailApi.publicKey(a)] as const));
@@ -49,9 +52,8 @@ export async function buildSend(session: MailboxSession, address: string, displa
   return {
     clientId: d.id,
     to: d.to, cc: d.cc, bcc: [],
-    subject: d.subject,
     ...(d.replyTo?.rfcMessageId ? { inReplyTo: d.replyTo.rfcMessageId, references: refs } : {}),
-    ...(hasExternal ? { external: { text: d.text, attachments: d.attachments.map(a => ({ filename: a.name, contentType: a.type || "application/octet-stream", content: b64(a.data) })) } } : {}),
+    ...(hasExternal ? { external: { subject: d.subject, text: d.text, attachments: d.attachments.map(a => ({ filename: a.name, contentType: a.type || "application/octet-stream", content: b64(a.data) })) } } : {}),
     internal: await Promise.all(internal.map(async ([addr, k]) => ({ address: addr, ...await encryptFor(await readPublicKey(k.publicKey), k.fingerprint) }))),
     sentCopy: await encryptFor(null, session.primaryFingerprint),
   };

@@ -7,6 +7,7 @@ import type { LiveSession } from "./live/gate";
 import { bodyText, createLabel as newLiveLabel, decryptDraft, decryptSettings, defaultSettings, encryptDraft, encryptSettings, toMessage, uiLabels, type LiveSettings } from "./live/mapping";
 import { buildSend } from "./live/outgoing";
 import { connectPush } from "./live/push";
+import { isRiskyFile } from "./live/trust";
 import { readPublicKey } from "./crypto/core";
 import { initials, newId } from "./ui";
 
@@ -261,10 +262,13 @@ function useMailState(live?: LiveSession) {
   /** Decrypt an attachment in the browser and hand it to the user as a download (live mode). */
   const downloadAttachment = useCallback(async (m: Message, index: number) => {
     if (!live || !m.ref) return;
+    const name = m.attachments[index]?.name ?? "attachment";
+    // End-to-end mail is never virus-scanned, and outside mail may carry files the scanner missed.
+    if (isRiskyFile(name) && !window.confirm(`“${name}” can run code on your computer when opened.\n\nOnly download it if you trust ${m.from.email} and expected this file.`)) return;
     try {
       const { data } = await live.session.decryptAttachment(await mailApi.download(live.address, m.ref, "attachment", index));
       const url = URL.createObjectURL(new Blob([data as BlobPart]));
-      const a = document.createElement("a"); a.href = url; a.download = m.attachments[index]?.name ?? "attachment"; a.click();
+      const a = document.createElement("a"); a.href = url; a.download = name; a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch { toast("Couldn't download that attachment."); }
   }, [live, toast]);

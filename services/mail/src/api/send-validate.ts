@@ -3,13 +3,12 @@
 import { normalizeAddress } from "../crypto/keys";
 import { BadRequest } from "./validate";
 
-export interface ExternalPart { text: string; html?: string; attachments: { filename: string; contentType: string; content: Buffer }[] }
+export interface ExternalPart { subject: string; text: string; html?: string; attachments: { filename: string; contentType: string; content: Buffer }[] }
 export interface Cipher { header: string; body: Buffer; attachments: Buffer[]; keyFingerprint: string }
 export interface InternalDelivery extends Cipher { address: string }
 export interface SendRequest {
   clientId: string;
   to: string[]; cc: string[]; bcc: string[];
-  subject: string;
   inReplyTo?: string;
   references: string[];
   external?: ExternalPart;
@@ -72,7 +71,8 @@ export function validateSend(input: unknown, localDomains: string[]): SendReques
   const all = [...new Set([...to, ...cc, ...bcc])];
   need(all.length >= 1, "Add at least one recipient");
   need(all.length <= MAX_RECIPIENTS, `At most ${MAX_RECIPIENTS} recipients per message`);
-  need(typeof input.subject === "string" && input.subject.length <= 998 && noBreaks(input.subject), "Invalid subject");
+  // The subject travels only inside `external`: mail between Mac Tidar users has it in the ciphertext header alone.
+  need(input.subject === undefined, "The subject belongs in the readable part for outside recipients only");
   need(input.inReplyTo === undefined || (typeof input.inReplyTo === "string" && MESSAGE_ID.test(input.inReplyTo)), "Invalid In-Reply-To");
   need(input.references === undefined || (Array.isArray(input.references) && input.references.length <= 50 && input.references.every(r => typeof r === "string" && MESSAGE_ID.test(r))), "Invalid References");
 
@@ -95,6 +95,7 @@ export function validateSend(input: unknown, localDomains: string[]): SendReques
   if (externals.length) {
     const e = input.external;
     need(isObj(e), "Message content is required for recipients outside Mac Tidar");
+    need(typeof e.subject === "string" && e.subject.length <= 998 && noBreaks(e.subject), "Invalid subject");
     need(typeof e.text === "string" && e.text.length <= 1_000_000, "Invalid text body");
     need(e.html === undefined || (typeof e.html === "string" && e.html.length <= 2_000_000), "Invalid HTML body");
     need(Array.isArray(e.attachments) && e.attachments.length === attachmentCount, "Attachments must match the message");
@@ -109,13 +110,13 @@ export function validateSend(input: unknown, localDomains: string[]): SendReques
       return { filename: a.filename, contentType: a.contentType, content };
     });
     need(total <= MAX_ATTACHMENT_BYTES, "Attachments are limited to 2 MB per message for now");
-    external = { text: e.text, html: e.html as string | undefined, attachments };
+    external = { subject: e.subject, text: e.text, html: e.html as string | undefined, attachments };
   } else {
     need(input.external === undefined, "Mail between Mac Tidar users must not include readable content");
   }
 
   return {
-    clientId: input.clientId, to, cc, bcc, subject: input.subject,
+    clientId: input.clientId, to, cc, bcc,
     inReplyTo: input.inReplyTo as string | undefined, references: (input.references as string[] | undefined) ?? [],
     external, internal, sentCopy: cipher(input.sentCopy, "sentCopy", attachmentCount),
   };

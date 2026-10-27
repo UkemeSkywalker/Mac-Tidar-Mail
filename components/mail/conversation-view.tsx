@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Message, Person } from "./data";
 import { SafeHtml } from "./live/safe-html";
+import { isRiskyFile } from "./live/trust";
 import { useMail } from "./store";
 import { Avatar, fmtLongDate, newId, Icon, IconButton, LabelChip, MenuItem, Popover, snoozeOptions, UrgentChip } from "./ui";
 
@@ -75,6 +76,7 @@ function MessageCard({ m, me, onReply, onReplyAll }: { m: Message; me: string; o
             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
               <span className="t-headline-md text-m-text font-semibold">{m.from.name}</span>
               <span className="t-body-sm text-m-muted">&lt;{m.from.email}&gt;</span>
+              {m.hiddenName && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-m-pill t-label-sm font-semibold" style={{ background: "var(--m-error-soft)", color: "var(--m-on-error-soft)" }} title={`The sender called themselves “${m.hiddenName}”, which looks like someone else, so their real address is shown instead.`}><Icon name="warning" className="text-[14px]" />Name hidden: looked like another sender</span>}
               {m.from.title && <span className="px-2 py-0.5 rounded-m-pill t-label-sm font-semibold" style={{ background: "var(--chip-engineering-bg)", color: "var(--chip-engineering-fg)" }}>{m.from.title}</span>}
             </div>
             <div className="flex flex-wrap items-center gap-1.5 text-m-muted t-body-sm">
@@ -128,7 +130,7 @@ function MessageCard({ m, me, onReply, onReplyAll }: { m: Message; me: string; o
                   <div className="w-10 h-10 rounded-m-lg flex items-center justify-center shrink-0" style={a.icon === "picture_as_pdf" ? { background: "var(--m-error-soft)", color: "var(--m-on-error-soft)" } : { background: "var(--chip-engineering-bg)", color: "var(--chip-engineering-fg)" }}>
                     <Icon name={a.icon} className="text-[22px]" />
                   </div>
-                  <div className="min-w-0"><div className="t-headline-sm text-m-text font-medium truncate">{a.name}</div><div className="t-label-sm text-m-muted">{a.size}</div></div>
+                  <div className="min-w-0"><div className="t-headline-sm text-m-text font-medium truncate">{a.name}</div><div className="t-label-sm text-m-muted">{a.size}{isRiskyFile(a.name) && <span className="text-m-error font-medium"> · can run code</span>}</div></div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   {m.ref
