@@ -1,6 +1,7 @@
 // Typed client for the mail API. Everything sent or received here is ciphertext or metadata.
 import { fetchAuthSession } from "aws-amplify/auth";
 import type { MailboxKeyState } from "../crypto";
+import type { Message } from "../data";
 import { liveConfig } from "./config";
 
 export type ServerFolder = "inbox" | "sent" | "archive" | "spam" | "trash";
@@ -8,6 +9,14 @@ export interface ServerMessage {
   id: string; sk: string; folder: ServerFolder; category: "primary" | "updates" | "newsletters"; receivedAt: string; threadId: string;
   fromAddress: string; toAddresses: string[]; ccAddresses: string[]; size: number; read: boolean; starred: boolean; labels: string[];
   snoozedUntil: string | null; keyFingerprint: string; header: string; attachmentCount: number; spam: boolean;
+  rfcMessageId: string | null; references: string[]; bccAddresses: string[]; deliveryStatus: Message["deliveryStatus"]; e2e: boolean;
+}
+export interface CipherPayload { header: string; body: string; attachments: string[]; keyFingerprint: string }
+export interface SendPayload {
+  clientId: string; to: string[]; cc: string[]; bcc: string[]; subject: string; inReplyTo?: string; references?: string[];
+  external?: { text: string; attachments: { filename: string; contentType: string; content: string }[] };
+  internal: (CipherPayload & { address: string })[];
+  sentCopy: CipherPayload;
 }
 export interface ServerMailbox { address: string; displayName: string; keyState: MailboxKeyState | null; keyVersion: number }
 export interface MessagePatch { read?: boolean; starred?: boolean; folder?: ServerFolder; labels?: string[]; snoozedUntil?: string | null }
@@ -56,4 +65,13 @@ export const mailApi = {
   },
   settings: (address: string) => call<{ blob: string | null; version: number }>("GET", `${mb(address)}/settings`),
   saveSettings: (address: string, blob: string, expectedVersion: number) => call<{ version: number }>("PUT", `${mb(address)}/settings`, { blob, expectedVersion }),
+  /** Public key of a Mac Tidar mailbox, or null if the address isn't one (send it as external mail). */
+  async publicKey(address: string): Promise<{ fingerprint: string; publicKey: string } | null> {
+    try { return await call("GET", `/v1/keys?address=${encodeURIComponent(address)}`); }
+    catch (e) { if (e instanceof ApiError && e.status === 404) return null; throw e; }
+  },
+  send: (address: string, payload: SendPayload) => call<{ message: ServerMessage }>("POST", `${mb(address)}/send`, payload).then(r => r.message),
+  drafts: (address: string) => call<{ drafts: { id: string; blob: string; updatedAt: string }[] }>("GET", `${mb(address)}/drafts`).then(r => r.drafts),
+  saveDraft: (address: string, id: string, blob: string) => call<{ id: string }>("PUT", `${mb(address)}/drafts/${encodeURIComponent(id)}`, { blob }),
+  deleteDraft: (address: string, id: string) => call<{ deleted: boolean }>("DELETE", `${mb(address)}/drafts/${encodeURIComponent(id)}`),
 };

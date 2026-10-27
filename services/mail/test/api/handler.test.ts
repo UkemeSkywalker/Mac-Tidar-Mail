@@ -2,6 +2,7 @@ import { DynamoDBClient, ConditionalCheckFailedException } from "@aws-sdk/client
 import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { DeleteObjectsCommand, ListObjectVersionsCommand, S3Client } from "@aws-sdk/client-s3";
 import { mockClient } from "aws-sdk-client-mock";
+import { SESv2Client } from "@aws-sdk/client-sesv2";
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from "aws-lambda";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { generateMailboxKey, lockPrivateKey } from "../../src/crypto";
@@ -13,7 +14,7 @@ const ddb = mockClient(DynamoDBDocumentClient), s3 = mockClient(S3Client);
 const meta = { pk: `MAILBOX#${ADDR}`, sk: "META", gsi1pk: `OWNER#${OWNER}`, gsi1sk: `MAILBOX#${ADDR}`, address: ADDR, ownerSub: OWNER, displayName: "Ukeme", status: "active", createdAt: "2026-10-27T00:00:00Z" };
 const msg = (folder: string, sk = "MSG#2026-10-27T17:29:27.538Z#abc") => ({ pk: meta.pk, sk, type: "message", id: "abc", mailbox: ADDR, folder, category: "primary", receivedAt: "2026-10-27T17:29:27.538Z", threadId: "t1", fromAddress: "a@gmail.com", toAddresses: [ADDR], ccAddresses: [], size: 10, read: false, starred: false, labels: [], encVersion: 1, keyFingerprint: "f", header: "-----BEGIN PGP MESSAGE-----x", bodyKey: `msg/${ADDR}/abc.pgp`, attachmentKeys: [`att/${ADDR}/abc/0.pgp`], gsi1pk: `MAILBOX#${ADDR}#FOLDER#${folder}`, gsi1sk: "x", gsi2pk: "THREAD#t1", gsi2sk: "x", verdicts: { spam: "PASS", virus: "PASS", spf: "PASS", dkim: "PASS", dmarc: "PASS" } });
 
-const api = () => createHandler({ ddb: DynamoDBDocumentClient.from(new DynamoDBClient({})), s3: new S3Client({}), config: { table: "mactidar-mail", bucket: "mail" }, presign: async (_c, cmd) => `https://signed/${cmd.input.Key}` });
+const api = () => createHandler({ ddb: DynamoDBDocumentClient.from(new DynamoDBClient({})), s3: new S3Client({}), ses: new SESv2Client({}), config: { table: "mactidar-mail", bucket: "mail", configurationSet: "mactidar-mail", localDomains: ["beta.mactidar.com"] }, presign: async (_c, cmd) => `https://signed/${cmd.input.Key}` });
 
 function req(routeKey: string, opts: { sub?: string | null; address?: string; query?: Record<string, string>; body?: unknown } = {}) {
   const [, path] = routeKey.split(" ");

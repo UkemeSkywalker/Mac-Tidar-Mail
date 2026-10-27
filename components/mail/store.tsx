@@ -4,7 +4,9 @@ import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, 
 import { accounts, Category, FolderId, Label, Mailbox, makeMailbox, Message, Person, Settings } from "./data";
 import { mailApi, type MessagePatch } from "./live/api";
 import type { LiveSession } from "./live/gate";
-import { bodyText, createLabel as newLiveLabel, decryptSettings, defaultSettings, encryptSettings, toMessage, uiLabels, type LiveSettings } from "./live/mapping";
+import { bodyText, createLabel as newLiveLabel, decryptDraft, decryptSettings, defaultSettings, encryptDraft, encryptSettings, toMessage, uiLabels, type LiveSettings } from "./live/mapping";
+import { buildSend } from "./live/outgoing";
+import { readPublicKey } from "./crypto/core";
 import { initials, newId } from "./ui";
 
 const STORE = "mtmail-v2";
@@ -39,6 +41,8 @@ export const folderMatch = (folder: string, m: Message) => {
     default: return m.folder === folder && m.kind === "message";
   }
 };
+
+const isFuture = (d?: Date): d is Date => !!d && d.getTime() > Date.now();
 
 export const blankDraft = (): Draft => ({ id: newId("d"), to: [], cc: [], subject: "", body: "", attachments: [] });
 
@@ -111,6 +115,11 @@ function useMailState(live?: LiveSession) {
         const items = folders.flat();
         const messages: Message[] = [];
         for (let i = 0; i < items.length; i += 20) messages.push(...await Promise.all(items.slice(i, i + 20).map(it => toMessage(it, live.session, names))));
+        const me = { name: live.displayName, email: live.address };
+        for (const d of await mailApi.drafts(live.address).catch(() => [])) {
+          const draft = await decryptDraft(d.blob, live.session);
+          if (draft) messages.push({ id: d.id, thread: draft.thread ?? d.id, kind: "draft", folder: "sent", category: "primary", from: me, to: draft.to, cc: draft.cc, subject: draft.subject, body: draft.body, date: d.updatedAt, read: true, starred: false, snoozedUntil: null, labels: [], attachments: [] });
+        }
         if (cancelled) return;
         const ids = labelIds();
         synced.current = new Map(messages.map(m => [m.id, snapshot(m, ids)]));
@@ -160,8 +169,10 @@ function useMailState(live?: LiveSession) {
     mark(pending.map(m => m.id), () => ({ bodyState: "loading" }));
     await Promise.all(pending.map(async m => {
       try {
-        const { body } = await live.session.decryptBody(await mailApi.download(live.address, m.ref!, "body"));
-        mark([m.id], () => ({ body: bodyText(body), bodyState: "loaded" }));
+        const sender = m.e2e && m.folder !== "sent" ? await mailApi.publicKey(m.from.email).catch(() => null) : null;
+        const verificationKeys = sender ? [await readPublicKey(sender.publicKey)] : undefined;
+        const { body, signature } = await live.session.decryptBody(await mailApi.download(live.address, m.ref!, "body"), { verificationKeys });
+        mark([m.id], () => ({ body: bodyText(body), bodyState: "loaded", ...(m.e2e && m.folder !== "sent" ? { signature } : {}) }));
       } catch { mark([m.id], () => ({ bodyState: "error" })); }
     }));
   };
@@ -269,29 +280,37 @@ function useMailState(live?: LiveSession) {
   const editDraft = (patch: Partial<Draft>) => setComposer(c => ({ ...c, draft: { ...c.draft, ...patch } }));
   const persistDraft = useCallback((draft: Draft) => {
     const has = draft.to.length || draft.subject.trim() || draft.body.trim();
+    if (live) {
+      if (has) void encryptDraft({ v: 1, to: draft.to, cc: draft.cc, subject: draft.subject, body: draft.body, thread: draft.thread }, live.session).then(blob => mailApi.saveDraft(live.address, draft.id, blob)).catch(() => toast("Couldn’t save your draft"));
+      else void mailApi.deleteDraft(live.address, draft.id).catch(() => {});
+    }
     setDb(d => {
-      const b = d.accounts[d.current]; const me = accounts.find(a => a.email === d.current)!;
+      const b = d.accounts[d.current];
+      const me = live ? { name: live.displayName, email: live.address } : accounts.find(a => a.email === d.current)!;
       const others = b.messages.filter(m => m.id !== draft.id);
       if (!has) return { ...d, accounts: { ...d.accounts, [d.current]: { ...b, messages: others } } };
       const msg: Message = { id: draft.id, thread: draft.thread ?? draft.id, kind: "draft", folder: "sent", category: "primary", from: { name: me.name, email: me.email }, to: draft.to, cc: draft.cc,
         subject: draft.subject, body: draft.body, date: new Date().toISOString(), read: true, starred: false, snoozedUntil: null, labels: [], attachments: draft.attachments };
       return { ...d, accounts: { ...d.accounts, [d.current]: { ...b, messages: [msg, ...others] } } };
     });
-  }, []);
+  }, [live, toast]);
   const closeComposer = (discard = false) => {
-    if (discard) { update(b => ({ ...b, messages: b.messages.filter(m => m.id !== composer.draft.id) })); toast("Draft discarded"); }
+    if (discard) {
+      update(b => ({ ...b, messages: b.messages.filter(m => m.id !== composer.draft.id) })); toast("Draft discarded");
+      if (live) void mailApi.deleteDraft(live.address, composer.draft.id).catch(() => {});
+    }
     else persistDraft(composer.draft);
     setComposer(c => ({ ...c, open: false }));
   };
   const openDraft = (m: Message) => compose({ id: m.id, to: m.to, cc: m.cc ?? [], subject: m.subject, body: m.body, thread: m.thread === m.id ? undefined : m.thread, attachments: m.attachments }, "full");
 
   /** Validates and sends (or schedules) a draft. Returns an error message when it can't. */
-  const send = (draft: Draft, opts: { scheduleAt?: Date; archive?: boolean } = {}) => {
-    if (live) return "Sending from Mac Tidar Mail is coming in the next update. Your draft is kept until you close this tab.";
+  async function send(draft: Draft, opts: { scheduleAt?: Date; archive?: boolean } = {}): Promise<string | null> {
+    if (live) return sendLive(draft, opts);
     if (!draft.to.length) return "Add at least one recipient";
     if (draft.to.some(p => !/^\S+@\S+\.\S+$/.test(p.email))) return "One of the recipients isn’t a valid email address";
     if (!draft.subject.trim()) return "Add a subject before sending";
-    const scheduled = opts.scheduleAt && opts.scheduleAt.getTime() > Date.now();
+    const scheduled = isFuture(opts.scheduleAt);
     const sid = newId("s");
     const msg: Message = { id: sid, thread: draft.thread ?? sid, kind: scheduled ? "scheduled" : "message", folder: "sent", category: "primary",
       from: { name: account.name, email: account.email }, to: draft.to, cc: draft.cc, subject: draft.subject.trim(), body: draft.body.trim() || "(No message body)",
@@ -300,7 +319,39 @@ function useMailState(live?: LiveSession) {
       scheduled ? `Scheduled for ${opts.scheduleAt!.toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })}` : opts.archive ? "Sent and archived — demo only" : "Message sent — demo only", true);
     if (opts.archive && view.kind === "thread") setView({ kind: "list" });
     return null;
-  };
+  }
+
+  async function sendLive(draft: Draft, opts: { scheduleAt?: Date; archive?: boolean }): Promise<string | null> {
+    if (!live) return null;
+    if (isFuture(opts.scheduleAt)) return "Scheduled send isn’t available yet: it would require the server to keep a readable copy, which zero-access encryption doesn’t allow.";
+    if (!draft.to.length) return "Add at least one recipient";
+    if (draft.to.concat(draft.cc).some(p => !/^[^\s@<>",]+@[^\s@<>",]+\.[A-Za-z]{2,}$/.test(p.email))) return "One of the recipients isn’t a valid email address";
+    if (!draft.subject.trim()) return "Add a subject before sending";
+    if (draft.attachments.some(a => !a.data)) return "Re-attach your files before sending (attachments aren’t kept in saved drafts)";
+    const parent = draft.thread ? threadMessages(draft.thread).filter(m => m.rfcMessageId).at(-1) : undefined;
+    try {
+      const payload = await buildSend(live.session, live.address, live.displayName, {
+        id: draft.id, to: draft.to.map(p => p.email), cc: draft.cc.map(p => p.email), subject: draft.subject.trim(), text: draft.body.trim() || " ",
+        attachments: draft.attachments.map(a => ({ name: a.name, type: a.type ?? "application/octet-stream", data: a.data! })),
+        replyTo: parent ? { rfcMessageId: parent.rfcMessageId, references: parent.references } : undefined,
+      });
+      const item = await mailApi.send(live.address, payload);
+      const names = new Map(liveSettings.current?.settings.labels.map(l => [l.id, l.name]) ?? []);
+      const message = { ...await toMessage(item, live.session, names), body: draft.body.trim(), bodyState: "loaded" as const };
+      synced.current?.set(message.id, snapshot(message, labelIds()));
+      setDb(d => {
+        const b = d.accounts[d.current];
+        const others = b.messages.filter(m => m.id !== draft.id).map(m => opts.archive && draft.thread && m.thread === draft.thread && m.folder === "inbox" ? { ...m, folder: "archive" as const } : m);
+        return { ...d, accounts: { ...d.accounts, [d.current]: { ...b, messages: [message, ...others] } } };
+      });
+      void mailApi.deleteDraft(live.address, draft.id).catch(() => {});
+      toast(payload.external ? (opts.archive ? "Sent and archived" : "Message sent") : "Sent with end-to-end encryption");
+      if (opts.archive && view.kind === "thread") setView({ kind: "list" });
+      return null;
+    } catch (e) {
+      return e instanceof Error ? e.message : "Couldn’t send your message";
+    }
+  }
 
   // Deliver scheduled mail and wake snoozed threads when they're due.
   useEffect(() => {

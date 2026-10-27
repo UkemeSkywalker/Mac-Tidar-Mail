@@ -1,7 +1,11 @@
 // Demo mail data. Everything lives in the browser; nothing is sent anywhere.
 
 export type Person = { name: string; email: string; title?: string };
-export type Attachment = { name: string; size: string; icon: string };
+export type Attachment = {
+  name: string; size: string; icon: string;
+  /** Composer only: the file's bytes, held in memory until sent (never persisted unencrypted). */
+  data?: Uint8Array; type?: string;
+};
 export type FolderId = "inbox" | "starred" | "snoozed" | "sent" | "drafts" | "scheduled" | "archive" | "spam" | "trash";
 export type Category = "primary" | "updates" | "newsletters";
 export type LabelTone = "product" | "engineering" | "investors" | "design" | "invoices" | "security" | "custom";
@@ -33,6 +37,13 @@ export type Message = {
   bodyState?: "preview" | "loading" | "loaded" | "error";
   /** Live mode: encrypted to a key this session can't open (e.g. locked after a password reset). */
   locked?: boolean;
+  rfcMessageId?: string | null;
+  references?: string[];
+  /** Mac Tidar → Mac Tidar mail, encrypted in the sender's browser. */
+  e2e?: boolean;
+  /** Result of checking the sender's signature on end-to-end mail. */
+  signature?: "verified" | "invalid" | "unverified" | "unsigned";
+  deliveryStatus?: "sent" | "delivered" | "bounced" | "complained" | "delayed" | "rejected" | null;
 };
 
 export type Settings = { density: "comfortable" | "compact"; signature: string; notifications: boolean };

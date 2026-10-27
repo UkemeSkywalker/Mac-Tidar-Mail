@@ -65,4 +65,19 @@ export interface MessageItem {
   attachmentKeys: string[];
   verdicts: { spam: string; virus: string; spf: string; dkim: string; dmarc: string };
   snoozedUntil?: string | null;
+  /** Message-IDs this message replies to, oldest first (for threading replies). */
+  references?: string[];
+  /** Sent copies only. */
+  bccAddresses?: string[];
+  sesMessageId?: string;
+  deliveryStatus?: "sent" | "delivered" | "bounced" | "complained" | "delayed" | "rejected";
+  /** Delivered Mac Tidar → Mac Tidar: encrypted and signed in the sender's browser. */
+  e2e?: boolean;
 }
+
+export const draftSk = (id: string) => `DRAFT#${id}`;
+/** `MAILBOX#addr/DRAFT#id`: a draft, encrypted in the browser. */
+export interface DraftItem { pk: string; sk: string; type: "draft"; id: string; blob: string; updatedAt: string }
+
+/** `SESMSG#<ses id>/PTR`: maps SES delivery events back to the sender's Sent copy. */
+export const sesPointerPk = (sesId: string) => `SESMSG#${sesId}`;

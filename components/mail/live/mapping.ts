@@ -2,7 +2,7 @@
 // Nothing decrypted here is ever written to localStorage or sent to the server.
 import { decryptBlob, encryptBlob } from "../crypto/core";
 import type { MailboxSession } from "../crypto";
-import type { Label, LabelTone, Message, Settings } from "../data";
+import type { Label, LabelTone, Message, Person, Settings } from "../data";
 import type { ServerMessage } from "./api";
 
 export interface LiveLabel { id: string; name: string; tone: LabelTone }
@@ -61,7 +61,25 @@ export async function toMessage(item: ServerMessage, session: MailboxSession, la
     attachments: header?.attachments?.map(a => ({ name: a.filename, size: fmtSize(a.size), icon: iconFor(a.contentType, a.filename) })) ?? [],
     bodyState: "preview",
     locked: !header,
+    rfcMessageId: item.rfcMessageId,
+    references: item.references,
+    e2e: item.e2e,
+    deliveryStatus: item.deliveryStatus,
   };
+}
+
+/** Drafts are encrypted to the mailbox's own key before they leave the browser. */
+export interface DraftBlob { v: 1; to: Person[]; cc: Person[]; subject: string; body: string; thread?: string }
+
+export async function encryptDraft(d: DraftBlob, session: MailboxSession): Promise<string> {
+  return encryptBlob(enc.encode(JSON.stringify(d)), { encryptionKeys: [session.primaryPublicKey()], signingKey: session.signingKey() });
+}
+
+export async function decryptDraft(blob: string, session: MailboxSession): Promise<DraftBlob | null> {
+  try {
+    const parsed = JSON.parse(dec.decode((await decryptBlob(blob, { decryptionKeys: session.decryptionKeys() })).data)) as DraftBlob;
+    return parsed?.v === 1 && Array.isArray(parsed.to) ? parsed : null;
+  } catch { return null; }
 }
 
 /** Plain text for display. HTML bodies are reduced to text until sanitised rendering lands (Phase 6). */

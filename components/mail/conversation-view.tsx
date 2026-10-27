@@ -84,6 +84,14 @@ function MessageCard({ m, me, onReply, onReplyAll }: { m: Message; me: string; o
           </div>
         </div>
         <div className="flex items-center gap-space-sm shrink-0 self-end sm:self-auto">
+          {m.e2e && (m.signature === "invalid"
+            ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-m-pill t-label-sm font-semibold" style={{ background: "var(--m-error-soft)", color: "var(--m-on-error-soft)" }} title="The signature doesn’t match the sender’s key. Be careful with this message."><Icon name="gpp_bad" className="text-[14px]" />Signature mismatch</span>
+            : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-m-pill t-label-sm font-semibold" style={{ background: "var(--chip-engineering-bg)", color: "var(--chip-engineering-fg)" }} title={m.signature === "verified" ? "Encrypted in the sender’s browser and signed by their Mac Tidar key" : "Encrypted in the sender’s browser"}><Icon name={m.signature === "verified" ? "verified_user" : "lock"} className="text-[14px]" />End-to-end{m.signature === "verified" ? " · verified" : ""}</span>)}
+          {m.folder === "sent" && m.deliveryStatus && m.deliveryStatus !== "sent" && (
+            <span className={`t-label-sm font-medium ${m.deliveryStatus === "bounced" || m.deliveryStatus === "rejected" || m.deliveryStatus === "complained" ? "text-m-error" : "text-m-muted"}`}>
+              {{ delivered: "Delivered", delayed: "Delivery delayed", bounced: "Bounced — not delivered", rejected: "Rejected", complained: "Marked as spam by recipient" }[m.deliveryStatus]}
+            </span>
+          )}
           <span className="t-body-sm text-m-muted whitespace-nowrap">{fmtLongDate(m.date)}</span>
           <div className="flex items-center gap-0.5">
             <button type="button" title="Star message (S)" aria-label="Star" onClick={() => toggleStar(m.thread)} className={`p-1.5 rounded-m-lg hover:bg-m-mid transition-colors ${starred ? "text-m-star" : "text-m-muted hover:text-m-star"}`}><Icon name="star" className="text-[19px]" fill={starred} /></button>
@@ -161,6 +169,7 @@ export function ConversationView({ thread }: { thread: string }) {
   const [reply, setReply] = useState("");
   const [replyAll, setReplyAll] = useState(true);
   const [error, setError] = useState("");
+  const [sending, setSending] = useState(false);
   const replyRef = useRef<HTMLTextAreaElement>(null);
   const close = () => setMenu(null);
   const toggle = (m: typeof menu) => setMenu(c => c === m ? null : m);
@@ -190,9 +199,12 @@ export function ConversationView({ thread }: { thread: string }) {
   };
   const recipients = others(replyAll);
   const draft = () => ({ id: newId("r"), to: recipients, cc: [], subject: `Re: ${subject}`, body: reply + (box.settings.signature ? `\n\n${box.settings.signature}` : ""), thread, attachments: [] });
-  const doSend = (opts: { archive?: boolean; scheduleAt?: Date } = {}) => {
+  const doSend = async (opts: { archive?: boolean; scheduleAt?: Date } = {}) => {
     if (!reply.trim()) { setError("Write a reply before sending"); replyRef.current?.focus(); return; }
-    const err = send(draft(), opts);
+    if (sending) return;
+    setSending(true);
+    const err = await send(draft(), opts);
+    setSending(false);
     if (err) setError(err); else { setReply(""); setError(""); }
   };
   const startReply = (all: boolean) => { setReplyAll(all); replyRef.current?.focus(); };

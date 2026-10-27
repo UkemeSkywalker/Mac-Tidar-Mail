@@ -7,11 +7,14 @@ import { ConditionalCheckFailedException, DynamoDBClient } from "@aws-sdk/client
 import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 import { normalizeAddress } from "../crypto/keys";
-import { folderGsi1, mailboxPk, META_SK, ownerGsi1, SETTINGS_SK, type Folder, type MailboxMeta, type MessageItem, type SettingsItem } from "../shared/table";
+import { SESv2Client } from "@aws-sdk/client-sesv2";
+import { draftSk, folderGsi1, mailboxPk, META_SK, ownerGsi1, SETTINGS_SK, type DraftItem, type Folder, type MailboxMeta, type MessageItem, type SettingsItem } from "../shared/table";
+import { Conflict as SendConflict, sendMessage } from "./send";
+import { validateSend } from "./send-validate";
 import { BadRequest, FOLDERS, validateKeyState, validatePatch, validateSettings, validateSks } from "./validate";
 
-export interface ApiConfig { table: string; bucket: string }
-export interface ApiDeps { ddb: DynamoDBDocumentClient; s3: S3Client; config: ApiConfig; presign?: (s3: S3Client, cmd: GetObjectCommand) => Promise<string> }
+export interface ApiConfig { table: string; bucket: string; configurationSet: string; localDomains: string[] }
+export interface ApiDeps { ddb: DynamoDBDocumentClient; s3: S3Client; ses: SESv2Client; config: ApiConfig; presign?: (s3: S3Client, cmd: GetObjectCommand) => Promise<string> }
 type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
 type Result = APIGatewayProxyStructuredResultV2;
 
@@ -30,6 +33,8 @@ const publicMessage = (m: MessageItem) => ({
   fromAddress: m.fromAddress, toAddresses: m.toAddresses, ccAddresses: m.ccAddresses, size: m.size, read: m.read,
   starred: m.starred, labels: m.labels, snoozedUntil: m.snoozedUntil ?? null, keyFingerprint: m.keyFingerprint,
   header: m.header, attachmentCount: m.attachmentKeys.length, spam: m.verdicts?.spam === "FAIL",
+  rfcMessageId: m.rfcMessageId ?? null, references: m.references ?? [], bccAddresses: m.bccAddresses ?? [],
+  deliveryStatus: m.deliveryStatus ?? null, e2e: !!m.e2e,
 });
 
 const encodeCursor = (key?: Record<string, unknown>) => key ? Buffer.from(JSON.stringify(key)).toString("base64url") : null;
@@ -42,14 +47,14 @@ function decodeCursor(cursor: string | undefined, expectedGsi1pk: string) {
   } catch { throw new BadRequest("Invalid cursor"); }
 }
 
-function parseBody(event: Event): unknown {
+function parseBody(event: Event, maxChars = 600_000): unknown {
   if (!event.body) throw new BadRequest("Body required");
-  if (event.body.length > 600_000) throw new BadRequest("Body too large");
+  if (event.body.length > maxChars) throw new BadRequest("Body too large");
   try { return JSON.parse(event.isBase64Encoded ? Buffer.from(event.body, "base64").toString() : event.body); }
   catch { throw new BadRequest("Body must be JSON"); }
 }
 
-export function createHandler({ ddb, s3, config, presign = (c, cmd) => getSignedUrl(c, cmd, { expiresIn: 300 }) }: ApiDeps) {
+export function createHandler({ ddb, s3, ses, config, presign = (c, cmd) => getSignedUrl(c, cmd, { expiresIn: 300 }) }: ApiDeps) {
   const T = config.table;
 
   async function ownedMailbox(sub: string, raw: string | undefined): Promise<MailboxMeta> {
@@ -187,6 +192,49 @@ export function createHandler({ ddb, s3, config, presign = (c, cmd) => getSigned
         return json(200, { version: item.version });
       }
 
+      case "GET /v1/keys": {
+        // Public key lookup for Mac Tidar recipients, so the browser can encrypt end to end.
+        let address: string;
+        try { address = normalizeAddress(q.address ?? ""); } catch { throw new NotFound(); }
+        if (!config.localDomains.includes(address.split("@")[1] ?? "")) throw new NotFound();
+        const { Item } = await ddb.send(new GetCommand({ TableName: T, Key: { pk: mailboxPk(address), sk: META_SK } }));
+        const meta = Item as MailboxMeta | undefined;
+        const key = meta?.status === "active" ? meta.keyState?.keys.find(k => k.fingerprint === meta.keyState?.primaryFingerprint) : undefined;
+        if (!meta || !key) throw new NotFound();
+        return json(200, { address, fingerprint: key.fingerprint, publicKey: key.publicKey });
+      }
+
+      case "POST /v1/mailboxes/{address}/send": {
+        const meta = await ownedMailbox(sub, p.address);
+        const req = validateSend(parseBody(event, 6_000_000), config.localDomains);
+        const sent = await sendMessage({ ddb, s3, ses, table: T, bucket: config.bucket, configurationSet: config.configurationSet }, meta, req);
+        return json(200, { message: publicMessage(sent) });
+      }
+
+      case "GET /v1/mailboxes/{address}/drafts": {
+        const meta = await ownedMailbox(sub, p.address);
+        const { Items = [] } = await ddb.send(new QueryCommand({ TableName: T, KeyConditionExpression: "pk = :pk AND begins_with(sk, :d)", ExpressionAttributeValues: { ":pk": meta.pk, ":d": "DRAFT#" } }));
+        return json(200, { drafts: (Items as DraftItem[]).map(d => ({ id: d.id, blob: d.blob, updatedAt: d.updatedAt })) });
+      }
+
+      case "PUT /v1/mailboxes/{address}/drafts/{id}": {
+        const meta = await ownedMailbox(sub, p.address);
+        const id = p.id ?? "";
+        if (!/^[A-Za-z0-9_-]{4,64}$/.test(id)) throw new BadRequest("Invalid draft id");
+        const body = parseBody(event, 1_600_000) as { blob?: unknown };
+        if (typeof body.blob !== "string" || body.blob.length > 1_500_000 || !/^-----BEGIN PGP MESSAGE-----[\s\S]+-----END PGP MESSAGE-----\s*$/.test(body.blob)) throw new BadRequest("Drafts must be encrypted messages");
+        const item: DraftItem = { pk: meta.pk, sk: draftSk(id), type: "draft", id, blob: body.blob, updatedAt: new Date().toISOString() };
+        await ddb.send(new PutCommand({ TableName: T, Item: item }));
+        return json(200, { id, updatedAt: item.updatedAt });
+      }
+
+      case "DELETE /v1/mailboxes/{address}/drafts/{id}": {
+        const meta = await ownedMailbox(sub, p.address);
+        if (!/^[A-Za-z0-9_-]{4,64}$/.test(p.id ?? "")) throw new BadRequest("Invalid draft id");
+        await ddb.send(new DeleteCommand({ TableName: T, Key: { pk: meta.pk, sk: draftSk(p.id!) } }));
+        return json(200, { deleted: true });
+      }
+
       default:
         throw new NotFound();
     }
@@ -200,7 +248,7 @@ export function createHandler({ ddb, s3, config, presign = (c, cmd) => getSigned
     } catch (e) {
       if (e instanceof BadRequest) return json(400, { error: e.message });
       if (e instanceof NotFound) return json(404, { error: "Not found" });
-      if (e instanceof Conflict) return json(409, { error: e.message });
+      if (e instanceof Conflict || e instanceof SendConflict) return json(409, { error: e.message });
       console.error(JSON.stringify({ event: "api-error", route: event.routeKey, name: (e as Error).name }));
       return json(500, { error: "Something went wrong" });
     }
@@ -218,7 +266,11 @@ export const handler = (event: Event) => {
   cached ??= createHandler({
     ddb: DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } }),
     s3: new S3Client({}),
-    config: { table: env("MAIL_TABLE"), bucket: env("MAIL_BUCKET") },
+    ses: new SESv2Client({}),
+    config: {
+      table: env("MAIL_TABLE"), bucket: env("MAIL_BUCKET"), configurationSet: env("SES_CONFIGURATION_SET"),
+      localDomains: env("LOCAL_MAIL_DOMAINS").split(",").map(d => d.trim().toLowerCase()),
+    },
   });
   return cached(event);
 };

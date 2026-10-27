@@ -29,6 +29,8 @@ const addresses = (field?: AddressObject | AddressObject[]) =>
   (Array.isArray(field) ? field : field ? [field] : []).flatMap(a => a.value).map(v => v.address).filter((a): a is string => !!a).map(normalizeAddress);
 
 const domainOf = (address: string) => address.split("@").pop() ?? "";
+const refList = (refs?: string | string[], inReplyTo?: string) =>
+  [...new Set([...(Array.isArray(refs) ? refs : refs ? refs.split(/\s+/) : []), ...(inReplyTo ? [inReplyTo] : [])].filter(Boolean))].slice(-50);
 
 export function createHandler({ s3, kms, ddb, config, log = e => console.log(JSON.stringify(e)) }: InboundDeps) {
   async function processRecord(record: SESEventRecord) {
@@ -94,7 +96,7 @@ export function createHandler({ s3, kms, ddb, config, log = e => console.log(JSO
           gsi1pk: folderGsi1(mailbox, disposition.folder), gsi1sk: `${receivedAt}#${sesId}`,
           gsi2pk: threadGsi2(tid), gsi2sk: `${receivedAt}#${sesId}`,
           type: "message", id: sesId, mailbox: normalizeAddress(mailbox), folder: disposition.folder, kind: "message", category,
-          receivedAt, threadId: tid, rfcMessageId: parsed.messageId, fromAddress, toAddresses: to, ccAddresses: cc,
+          receivedAt, threadId: tid, rfcMessageId: parsed.messageId, references: refList(parsed.references, parsed.inReplyTo), fromAddress, toAddresses: to, ccAddresses: cc,
           size: plain.byteLength, read: false, starred: false, labels: [], encVersion: 1, keyFingerprint: key.fingerprint,
           header: enc.header, bodyKey, attachmentKeys, verdicts,
         };

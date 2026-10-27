@@ -12,6 +12,12 @@ variable "table_arn" { type = string }
 variable "data_key_arn" { type = string }
 variable "alerts_topic_arn" { type = string }
 variable "lambda_source_dir" { type = string }
+variable "events_source_dir" { type = string }
+variable "account_id" { type = string }
+variable "local_domains" { type = list(string) }
+variable "ses_identity_arn" { type = string }
+variable "ses_configuration_set" { type = string }
+variable "ses_events_topic_arn" { type = string }
 
 locals {
   function_name = "mactidar-mail-api"
@@ -24,6 +30,11 @@ locals {
     "GET /v1/mailboxes/{address}/content",
     "GET /v1/mailboxes/{address}/settings",
     "PUT /v1/mailboxes/{address}/settings",
+    "GET /v1/keys",
+    "POST /v1/mailboxes/{address}/send",
+    "GET /v1/mailboxes/{address}/drafts",
+    "PUT /v1/mailboxes/{address}/drafts/{id}",
+    "DELETE /v1/mailboxes/{address}/drafts/{id}",
   ]
 }
 
@@ -86,6 +97,24 @@ data "aws_iam_policy_document" "api" {
     resources = ["${var.bucket_arn}/msg/*", "${var.bucket_arn}/att/*"]
   }
   statement {
+    sid     = "SendAsMacTidarAddressesOnly"
+    actions = ["ses:SendEmail", "ses:SendRawEmail"]
+    resources = concat(
+      [var.ses_identity_arn, "arn:aws:ses:${var.region}:${var.account_id}:configuration-set/${var.ses_configuration_set}"],
+      [for d in var.local_domains : "arn:aws:ses:${var.region}:${var.account_id}:identity/${d}"],
+    )
+    condition {
+      test     = "StringLike"
+      variable = "ses:FromAddress"
+      values   = [for d in var.local_domains : "*@${d}"]
+    }
+  }
+  statement {
+    sid       = "WriteSentCiphertext"
+    actions   = ["s3:PutObject"]
+    resources = ["${var.bucket_arn}/msg/*", "${var.bucket_arn}/att/*"]
+  }
+  statement {
     sid       = "ListCiphertextVersions"
     actions   = ["s3:ListBucketVersions"]
     resources = [var.bucket_arn]
@@ -111,13 +140,15 @@ resource "aws_lambda_function" "api" {
   handler          = "index.handler"
   filename         = data.archive_file.api.output_path
   source_code_hash = data.archive_file.api.output_base64sha256
-  memory_size      = 512
-  timeout          = 15
+  memory_size      = 1024
+  timeout          = 30
 
   environment {
     variables = {
       MAIL_BUCKET                         = var.bucket_name
       MAIL_TABLE                          = var.table_name
+      SES_CONFIGURATION_SET               = var.ses_configuration_set
+      LOCAL_MAIL_DOMAINS                  = join(",", var.local_domains)
       NODE_OPTIONS                        = "--enable-source-maps"
       AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1"
     }
@@ -132,7 +163,7 @@ resource "aws_apigatewayv2_api" "mail" {
 
   cors_configuration {
     allow_origins = var.app_origins
-    allow_methods = ["GET", "PUT", "PATCH", "POST"]
+    allow_methods = ["GET", "PUT", "PATCH", "POST", "DELETE"]
     allow_headers = ["authorization", "content-type"]
     max_age       = 3600
   }
@@ -209,3 +240,77 @@ resource "aws_cloudwatch_metric_alarm" "errors" {
 }
 
 output "api_url" { value = aws_apigatewayv2_stage.default.invoke_url }
+
+# ── Delivery events: SES → SNS → this Lambda → Sent copy's delivery status ──────────────────
+data "archive_file" "events" {
+  type        = "zip"
+  source_dir  = var.events_source_dir
+  output_path = "${path.root}/.build/ses-events.zip"
+  excludes    = ["index.mjs.map"]
+}
+
+resource "aws_cloudwatch_log_group" "events" {
+  name              = "/aws/lambda/mactidar-mail-ses-events"
+  retention_in_days = 14
+}
+
+resource "aws_iam_role" "events" {
+  name               = "mactidar-mail-ses-events"
+  assume_role_policy = data.aws_iam_policy_document.assume.json
+}
+
+data "aws_iam_policy_document" "events" {
+  statement {
+    actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+    resources = ["${aws_cloudwatch_log_group.events.arn}:*"]
+  }
+  statement {
+    actions   = ["dynamodb:GetItem", "dynamodb:UpdateItem"]
+    resources = [var.table_arn]
+  }
+  statement {
+    actions   = ["kms:Decrypt", "kms:GenerateDataKey"]
+    resources = [var.data_key_arn]
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["dynamodb.${var.region}.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "events" {
+  name   = "ses-events"
+  role   = aws_iam_role.events.id
+  policy = data.aws_iam_policy_document.events.json
+}
+
+resource "aws_lambda_function" "events" {
+  function_name    = "mactidar-mail-ses-events"
+  role             = aws_iam_role.events.arn
+  runtime          = "nodejs22.x"
+  architectures    = ["arm64"]
+  handler          = "index.handler"
+  filename         = data.archive_file.events.output_path
+  source_code_hash = data.archive_file.events.output_base64sha256
+  memory_size      = 256
+  timeout          = 15
+  environment {
+    variables = { MAIL_TABLE = var.table_name, NODE_OPTIONS = "--enable-source-maps" }
+  }
+  depends_on = [aws_cloudwatch_log_group.events, aws_iam_role_policy.events]
+}
+
+resource "aws_lambda_permission" "sns" {
+  statement_id  = "AllowSesEventsTopic"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.events.function_name
+  principal     = "sns.amazonaws.com"
+  source_arn    = var.ses_events_topic_arn
+}
+
+resource "aws_sns_topic_subscription" "events" {
+  topic_arn = var.ses_events_topic_arn
+  protocol  = "lambda"
+  endpoint  = aws_lambda_function.events.arn
+}
