@@ -167,13 +167,13 @@ function useMailState(live?: LiveSession) {
   const refreshing = useRef(false);
 
   /** Pull new mail and changes made elsewhere (live mode). Local edits not yet echoed back win. */
-  const refresh = useCallback(async (manual = false) => {
+  const refresh = useCallback(async (manual = false, folders: readonly ("inbox" | "sent" | "archive" | "spam" | "trash")[] = ["inbox", "sent", "archive", "spam", "trash"]) => {
     if (!live || loading || refreshing.current || !synced.current) return;
     refreshing.current = true;
     try {
       const names = new Map(liveSettings.current?.settings.labels.map(l => [l.id, l.name]) ?? []);
       const ids = labelIds();
-      const items = (await Promise.all((["inbox", "sent", "archive", "spam", "trash"] as const).map(f => mailApi.listFolder(live.address, f)))).flat();
+      const items = (await Promise.all(folders.map(f => mailApi.listFolder(live.address, f)))).flat();
       const local = new Map(dbRef.current.accounts[dbRef.current.current].messages.map(m => [m.id, m]));
       const serverIds = new Set(items.map(i => i.sk));
       const added: Message[] = [], changed = new Map<string, Partial<Message>>(), removed = new Set<string>();
@@ -187,7 +187,7 @@ function useMailState(live?: LiveSession) {
         changed.set(it.sk, { read: it.read, starred: it.starred, folder: it.folder, snoozedUntil: it.snoozedUntil, deliveryStatus: it.deliveryStatus, labels: it.labels.map(id => names.get(id)).filter((n): n is string => !!n) });
         synced.current.set(it.sk, server);
       }
-      for (const [id, m] of local) if (m.ref && !serverIds.has(id) && synced.current.has(id)) { removed.add(id); synced.current.delete(id); }
+      if (folders.length === 5) for (const [id, m] of local) if (m.ref && !serverIds.has(id) && synced.current.has(id)) { removed.add(id); synced.current.delete(id); }
       for (const m of added) synced.current.set(m.id, snapshot(m, ids));
       if (added.length || changed.size || removed.size) {
         setDb(d => {
@@ -210,7 +210,8 @@ function useMailState(live?: LiveSession) {
   // Instant delivery: the server pushes a content-free "new mail" signal; polling stays as a fallback.
   useEffect(() => {
     if (!live || loading) return;
-    return connectPush(live.address, () => void refresh());
+    // New mail only ever lands in Inbox or Spam, so a push only needs those two folders.
+    return connectPush(live.address, () => void refresh(false, ["inbox", "spam"]));
   }, [live, loading, refresh]);
 
   useEffect(() => {

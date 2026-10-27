@@ -62,7 +62,8 @@ export function createHandler({ s3, kms, ddb, config, log = e => console.log(JSO
       }
 
       const recipients = [...new Set(receipt.recipients.map(normalizeAddress))].filter(r => config.receivingDomains.includes(domainOf(r)));
-      const receivedAt = new Date(receipt.timestamp ?? mail.timestamp).toISOString();
+      const receiptTime = receipt.timestamp ?? mail.timestamp;
+      const receivedAt = new Date(receiptTime).toISOString();
       const root = threadRoot(parsed.messageId, parsed.inReplyTo, parsed.references);
       const category = categorize(parsed.headers, fromAddress);
       const to = addresses(parsed.to), cc = addresses(parsed.cc);
@@ -115,7 +116,10 @@ export function createHandler({ s3, kms, ddb, config, log = e => console.log(JSO
       // Keep the (still KMS-encrypted) raw object only while a mailbox is waiting for its keys;
       // the bucket lifecycle removes it after 3 days regardless.
       if (pending === 0) await deleteRaw();
-      log({ event: "processed", sesId, stored, pending, folder: disposition.folder });
+      // Timings only (no content): how long the sender's provider held the mail, and how long we took.
+      const receivedMs = Date.parse(receiptTime);
+      log({ event: "processed", sesId, stored, pending, folder: disposition.folder,
+        senderLagMs: parsed.date ? receivedMs - parsed.date.getTime() : null, pipelineMs: Date.now() - receivedMs });
       if (stored) await notifyMailboxes(ddb, config.table, notified);
     } finally {
       plain.fill(0);
