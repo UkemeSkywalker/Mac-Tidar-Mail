@@ -35,15 +35,16 @@ function rfc822(from = "elena@gmail.com", extraHeaders = "") {
   ].join("\r\n");
 }
 
-/** Encrypt like SES's S3 action does (S3 Encryption Client v2, kms+context). */
-function sesEnvelope(plain: string) {
+/** Encrypt exactly like SES's S3 action does (metadata shape copied from a real SES object). */
+function sesEnvelope(plain: string, wrap: "kms" | "kms+context" = "kms") {
   const iv = randomBytes(12);
   const c = createCipheriv("aes-256-gcm", dataKey, iv);
   const body = Buffer.concat([c.update(plain), c.final(), c.getAuthTag()]);
-  const context = { "aws:x-amz-cek-alg": "AES/GCM/NoPadding", "aws:ses:message-id": "ses-1", "aws:ses:rule-name": "inbound", "aws:ses:source-account": "111111111111" };
+  const ses = { "aws:ses:message-id": "ses-1", "aws:ses:rule-name": "inbound", "aws:ses:source-account": "111111111111" };
+  const context = wrap === "kms" ? { ...ses, kms_cmk_id: RAW_KEY_ARN } : { "aws:x-amz-cek-alg": "AES/GCM/NoPadding", ...ses };
   return {
     body,
-    metadata: { "x-amz-key-v2": Buffer.from("wrapped").toString("base64"), "x-amz-iv": iv.toString("base64"), "x-amz-cek-alg": "AES/GCM/NoPadding", "x-amz-wrap-alg": "kms+context", "x-amz-tag-len": "128", "x-amz-matdesc": JSON.stringify(context) },
+    metadata: { "x-amz-key-v2": Buffer.from("wrapped").toString("base64"), "x-amz-iv": iv.toString("base64"), "x-amz-cek-alg": "AES/GCM/NoPadding", "x-amz-wrap-alg": wrap, "x-amz-tag-len": "128", "x-amz-matdesc": JSON.stringify(context), "x-amz-unencrypted-content-length": String(Buffer.byteLength(plain)) },
   };
 }
 
@@ -160,6 +161,21 @@ describe("inbound handler", () => {
     ddbBase.on(PutCommand).rejects(new ConditionalCheckFailedException({ message: "exists", $metadata: {} }));
     await expect(handler()(event())).resolves.toBeUndefined();
     expect(s3.commandCalls(DeleteObjectCommand)).toHaveLength(1);
+  });
+
+  it("also accepts the kms+context envelope format", async () => {
+    const { body, metadata } = sesEnvelope(rfc822(), "kms+context");
+    s3.on(GetObjectCommand).resolves({ Body: streamOf(body), Metadata: metadata, VersionId: "v-raw" });
+    await handler()(event());
+    expect(items).toHaveLength(1);
+  });
+
+  it("refuses an envelope whose material description names a different KMS key", async () => {
+    const { body, metadata } = sesEnvelope(rfc822());
+    const matdesc = JSON.stringify({ ...JSON.parse(metadata["x-amz-matdesc"]), kms_cmk_id: "arn:aws:kms:af-south-1:111111111111:key/other" });
+    s3.on(GetObjectCommand).resolves({ Body: streamOf(body), Metadata: { ...metadata, "x-amz-matdesc": matdesc } });
+    await expect(handler()(event())).rejects.toBeInstanceOf(UnsupportedEnvelopeError);
+    expect(kms.commandCalls(DecryptCommand)).toHaveLength(0);
   });
 
   it("refuses envelopes it does not recognise rather than guessing", async () => {
