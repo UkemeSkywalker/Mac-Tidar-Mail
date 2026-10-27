@@ -17,9 +17,9 @@ variable "root_domain" {
 }
 
 variable "receiving_domains" {
-  description = "Domains whose mail SES accepts. Start with the beta subdomain; add the root domain at cutover."
+  description = "Domains whose mail SES accepts. The root domain was added at cutover (Phase 7)."
   type        = list(string)
-  default     = ["beta.mactidar.com"]
+  default     = ["beta.mactidar.com", "mactidar.com"]
 }
 
 variable "app_origins" {
