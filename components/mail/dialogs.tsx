@@ -54,7 +54,7 @@ function Shortcuts() {
 const TABS = ["General", "Appearance", "Accounts", "Signatures", "Notifications", "Keyboard shortcuts", "Storage", "About"];
 
 function SettingsDialog({ initial }: { initial?: string }) {
-  const { setDialog, box, account, updateSettings, resetAccount, switchAccount, emptyTrash, toast } = useMail();
+  const { setDialog, box, account, updateSettings, resetAccount, switchAccount, emptyTrash, toast, live } = useMail();
   const [tab, setTab] = useState(initial && TABS.includes(initial) ? initial : "General");
   const skin = useSkin();
   const s = box.settings;
@@ -68,7 +68,7 @@ function SettingsDialog({ initial }: { initial?: string }) {
         </nav>
         <div className="flex-1 p-space-lg">
           {tab === "General" && <>
-            <Row title="Reset demo workspace" text="Restore the original demo mail, labels and settings for this account."><Btn tone="danger" onClick={() => { if (confirm("Reset this demo account? Your local changes will be lost.")) { resetAccount(); close(); } }}>Reset demo</Btn></Row>
+            {!live && <Row title="Reset demo workspace" text="Restore the original demo mail, labels and settings for this account."><Btn tone="danger" onClick={() => { if (confirm("Reset this demo account? Your local changes will be lost.")) { resetAccount(); close(); } }}>Reset demo</Btn></Row>}
             <Row title="Inbox density" text="Comfortable or compact conversation rows.">
               <select value={s.density} onChange={e => updateSettings({ density: e.target.value as typeof s.density })} className="bg-m-low text-m-text rounded-m-lg px-2 py-1.5 t-body-md border border-m-line">
                 <option value="comfortable">Comfortable</option><option value="compact">Compact</option>
@@ -85,7 +85,12 @@ function SettingsDialog({ initial }: { initial?: string }) {
             ))}
             <p className="sm:col-span-2 t-body-sm text-m-muted pt-2">Your skin is shared with the Mac Tidar homepage.</p>
           </div>}
-          {tab === "Accounts" && <>
+          {tab === "Accounts" && live && <>
+            <Row title={live.displayName} text={`${live.address} · zero-access encrypted`}><Btn onClick={() => { close(); void live.signOut(); }}>Sign out</Btn></Row>
+            <Row title="Recover older mail" text={live.lockedKeys ? `${live.lockedKeys} older key${live.lockedKeys > 1 ? "s are" : " is"} locked after a password reset.` : "All of your keys are unlocked."}>{live.lockedKeys > 0 && <Btn tone="brand" onClick={() => { close(); live.openRecovery(); }}>Recover</Btn>}</Row>
+            <p className="t-body-sm text-m-muted pt-3">Your mail is encrypted with a key only you hold. Mac Tidar cannot read it or reset it for you — keep your recovery file safe.</p>
+          </>}
+          {tab === "Accounts" && !live && <>
             {accounts.map(a => (
               <div key={a.email} className="flex items-center justify-between gap-3 py-3 border-b border-m-line last:border-0">
                 <span className="flex items-center gap-3 min-w-0"><Avatar person={a} /><span className="min-w-0"><b className="block t-headline-sm text-m-text truncate">{a.name}</b><span className="t-body-sm text-m-muted">{a.email}</span></span></span>

@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Message, Person } from "./data";
+import { SafeHtml } from "./live/safe-html";
+import { isRiskyFile } from "./live/trust";
 import { useMail } from "./store";
 import { Avatar, fmtLongDate, newId, Icon, IconButton, LabelChip, MenuItem, Popover, snoozeOptions, UrgentChip } from "./ui";
 
@@ -54,7 +56,7 @@ function Q3RoadmapBody() {
 const eml = (m: Message) => [`From: ${m.from.name} <${m.from.email}>`, `To: ${m.to.map(p => `${p.name} <${p.email}>`).join(", ")}`, `Date: ${new Date(m.date).toUTCString()}`, `Subject: ${m.subject}`, "Content-Type: text/plain; charset=utf-8", "", m.body].join("\r\n");
 
 function MessageCard({ m, me, onReply, onReplyAll }: { m: Message; me: string; onReply: () => void; onReplyAll: () => void }) {
-  const { compose, toggleStar, box } = useMail();
+  const { compose, toggleStar, box, downloadAttachment } = useMail();
   const [menu, setMenu] = useState(false);
   const [raw, setRaw] = useState(false);
   const thread = box.messages.filter(x => x.thread === m.thread);
@@ -74,6 +76,7 @@ function MessageCard({ m, me, onReply, onReplyAll }: { m: Message; me: string; o
             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
               <span className="t-headline-md text-m-text font-semibold">{m.from.name}</span>
               <span className="t-body-sm text-m-muted">&lt;{m.from.email}&gt;</span>
+              {m.hiddenName && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-m-pill t-label-sm font-semibold" style={{ background: "var(--m-error-soft)", color: "var(--m-on-error-soft)" }} title={`The sender called themselves “${m.hiddenName}”, which looks like someone else, so their real address is shown instead.`}><Icon name="warning" className="text-[14px]" />Name hidden: looked like another sender</span>}
               {m.from.title && <span className="px-2 py-0.5 rounded-m-pill t-label-sm font-semibold" style={{ background: "var(--chip-engineering-bg)", color: "var(--chip-engineering-fg)" }}>{m.from.title}</span>}
             </div>
             <div className="flex flex-wrap items-center gap-1.5 text-m-muted t-body-sm">
@@ -84,6 +87,14 @@ function MessageCard({ m, me, onReply, onReplyAll }: { m: Message; me: string; o
           </div>
         </div>
         <div className="flex items-center gap-space-sm shrink-0 self-end sm:self-auto">
+          {m.e2e && (m.signature === "invalid"
+            ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-m-pill t-label-sm font-semibold" style={{ background: "var(--m-error-soft)", color: "var(--m-on-error-soft)" }} title="The signature doesn’t match the sender’s key. Be careful with this message."><Icon name="gpp_bad" className="text-[14px]" />Signature mismatch</span>
+            : <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-m-pill t-label-sm font-semibold" style={{ background: "var(--chip-engineering-bg)", color: "var(--chip-engineering-fg)" }} title={m.signature === "verified" ? "Encrypted in the sender’s browser and signed by their Mac Tidar key" : "Encrypted in the sender’s browser"}><Icon name={m.signature === "verified" ? "verified_user" : "lock"} className="text-[14px]" />End-to-end{m.signature === "verified" ? " · verified" : ""}</span>)}
+          {m.folder === "sent" && m.deliveryStatus && m.deliveryStatus !== "sent" && (
+            <span className={`t-label-sm font-medium ${m.deliveryStatus === "bounced" || m.deliveryStatus === "rejected" || m.deliveryStatus === "complained" ? "text-m-error" : "text-m-muted"}`}>
+              {{ delivered: "Delivered", delayed: "Delivery delayed", bounced: "Bounced — not delivered", rejected: "Rejected", complained: "Marked as spam by recipient" }[m.deliveryStatus]}
+            </span>
+          )}
           <span className="t-body-sm text-m-muted whitespace-nowrap">{fmtLongDate(m.date)}</span>
           <div className="flex items-center gap-0.5">
             <button type="button" title="Star message (S)" aria-label="Star" onClick={() => toggleStar(m.thread)} className={`p-1.5 rounded-m-lg hover:bg-m-mid transition-colors ${starred ? "text-m-star" : "text-m-muted hover:text-m-star"}`}><Icon name="star" className="text-[19px]" fill={starred} /></button>
@@ -102,23 +113,29 @@ function MessageCard({ m, me, onReply, onReplyAll }: { m: Message; me: string; o
       </div>
       {raw && <pre className="mx-space-lg mt-space-md p-space-md rounded-m-xl bg-m-low text-m-muted t-body-sm whitespace-pre-wrap break-words font-mono">{eml(m)}</pre>}
       <div className="p-space-lg space-y-space-md text-m-text t-body-lg leading-relaxed">
-        {m.rich === "q3-roadmap" ? <Q3RoadmapBody /> : m.body.split(/\n{2,}/).map((p, i) => <p key={i} className="whitespace-pre-line">{p}</p>)}
+        {m.locked ? <p className="flex items-center gap-2 text-m-muted"><Icon name="lock" className="text-[18px]" />This message is encrypted to an older key. Recover your older keys (Settings → Accounts) to read it.</p>
+          : m.bodyState === "loading" ? <p className="flex items-center gap-2 text-m-muted"><span className="w-3.5 h-3.5 rounded-full border-2 border-m-brand border-t-transparent animate-spin" />Decrypting…</p>
+          : m.bodyState === "error" ? <p className="text-m-error">Couldn’t decrypt this message.</p>
+          : m.rich === "q3-roadmap" ? <Q3RoadmapBody />
+          : m.html ? <SafeHtml html={m.html} inlineImages={m.inlineUrls ?? {}} />
+          : m.body.split(/\n{2,}/).map((p, i) => <p key={i} className="whitespace-pre-line break-words">{p}</p>)}
       </div>
       {total > 0 && (
         <div className="p-space-lg bg-m-low/40 space-y-space-sm">
           <div className="flex items-center gap-2 text-m-muted t-headline-sm font-medium"><Icon name="attachment" className="text-[18px]" /><span>{total} Attachment{total > 1 ? "s" : ""}</span></div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-space-sm">
-            {m.attachments.map(a => (
-              <div key={a.name} className="p-space-sm rounded-m-xl bg-m-card shadow-xs hover:shadow-md transition-shadow flex items-center justify-between gap-space-sm border border-m-line/60">
+            {m.attachments.map((a, i) => (
+              <div key={`${a.name}-${i}`} className="p-space-sm rounded-m-xl bg-m-card shadow-xs hover:shadow-md transition-shadow flex items-center justify-between gap-space-sm border border-m-line/60">
                 <div className="flex items-center gap-space-sm min-w-0">
                   <div className="w-10 h-10 rounded-m-lg flex items-center justify-center shrink-0" style={a.icon === "picture_as_pdf" ? { background: "var(--m-error-soft)", color: "var(--m-on-error-soft)" } : { background: "var(--chip-engineering-bg)", color: "var(--chip-engineering-fg)" }}>
                     <Icon name={a.icon} className="text-[22px]" />
                   </div>
-                  <div className="min-w-0"><div className="t-headline-sm text-m-text font-medium truncate">{a.name}</div><div className="t-label-sm text-m-muted">{a.size}</div></div>
+                  <div className="min-w-0"><div className="t-headline-sm text-m-text font-medium truncate">{a.name}</div><div className="t-label-sm text-m-muted">{a.size}{isRiskyFile(a.name) && <span className="text-m-error font-medium"> · can run code</span>}</div></div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  <IconButton icon="visibility" title="Preview isn’t available in the demo" disabled />
-                  <IconButton icon="download" title="Downloads aren’t available in the demo" disabled />
+                  {m.ref
+                    ? <IconButton icon="download" title="Decrypt and download" onClick={() => downloadAttachment(m, i)} />
+                    : <IconButton icon="download" title="Downloads aren’t available in the demo" disabled />}
                 </div>
               </div>
             ))}
@@ -157,6 +174,7 @@ export function ConversationView({ thread }: { thread: string }) {
   const [reply, setReply] = useState("");
   const [replyAll, setReplyAll] = useState(true);
   const [error, setError] = useState("");
+  const [sending, setSending] = useState(false);
   const replyRef = useRef<HTMLTextAreaElement>(null);
   const close = () => setMenu(null);
   const toggle = (m: typeof menu) => setMenu(c => c === m ? null : m);
@@ -186,9 +204,12 @@ export function ConversationView({ thread }: { thread: string }) {
   };
   const recipients = others(replyAll);
   const draft = () => ({ id: newId("r"), to: recipients, cc: [], subject: `Re: ${subject}`, body: reply + (box.settings.signature ? `\n\n${box.settings.signature}` : ""), thread, attachments: [] });
-  const doSend = (opts: { archive?: boolean; scheduleAt?: Date } = {}) => {
+  const doSend = async (opts: { archive?: boolean; scheduleAt?: Date } = {}) => {
     if (!reply.trim()) { setError("Write a reply before sending"); replyRef.current?.focus(); return; }
-    const err = send(draft(), opts);
+    if (sending) return;
+    setSending(true);
+    const err = await send(draft(), opts);
+    setSending(false);
     if (err) setError(err); else { setReply(""); setError(""); }
   };
   const startReply = (all: boolean) => { setReplyAll(all); replyRef.current?.focus(); };

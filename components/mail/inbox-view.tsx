@@ -47,7 +47,7 @@ function Tabs() {
 }
 
 function Toolbar({ total }: { total: number }) {
-  const { rows, selected, setSelected, folder, move, destroy, markRead, snooze, toggleLabel, box, updateSettings, sort, setSort, page, setPage, toast } = useMail();
+  const { rows, selected, setSelected, folder, move, destroy, markRead, snooze, toggleLabel, box, updateSettings, sort, setSort, page, setPage, toast, live, refresh } = useMail();
   const [menu, setMenu] = useState<null | "select" | "snooze" | "label" | "move" | "sort">(null);
   const close = () => setMenu(null);
   const toggle = (m: typeof menu) => setMenu(c => c === m ? null : m);
@@ -113,7 +113,7 @@ function Toolbar({ total }: { total: number }) {
       </div>
 
       <div className="flex items-center gap-space-sm t-label-md text-m-muted">
-        <IconButton icon="refresh" title="Sync inbox (U)" onClick={() => toast("Mail is up to date")} className="hidden sm:block" />
+        <IconButton icon="refresh" title="Check for new mail" onClick={() => live ? void refresh(true) : toast("Mail is up to date")} className="hidden sm:block" />
         <div className="hidden md:flex items-center bg-m-mid p-0.5 rounded-m-lg">
           {(["comfortable", "compact"] as const).map(d => (
             <button key={d} type="button" onClick={() => updateSettings({ density: d })}
@@ -248,7 +248,7 @@ export function ShortcutBar() {
 }
 
 export function InboxView() {
-  const { rows, folder, page, query, filters, box } = useMail();
+  const { rows, folder, page, query, filters, box, live, loading } = useMail();
   const pageRows = rows.slice(page * PAGE, page * PAGE + PAGE);
   const [title, icon] = folder.startsWith("label:") ? [folder.slice(6), "label"] : folderTitles[folder] ?? ["Inbox", "inbox"];
   const filtered = !!query || Object.values(filters).some(Boolean);
@@ -272,10 +272,17 @@ export function InboxView() {
           </div>
         </div>
         <Toolbar total={rows.length} />
+        {live && live.lockedKeys > 0 && (
+          <div className="flex items-center justify-between gap-3 px-gutter-lg py-2 t-body-sm" style={{ background: "var(--chip-invoices-bg)", color: "var(--chip-invoices-fg)" }}>
+            <span className="flex items-center gap-2"><Icon name="lock" className="text-[16px]" />Some older mail is locked after a password reset.</span>
+            <button type="button" onClick={live.openRecovery} className="font-semibold underline">Recover</button>
+          </div>
+        )}
       </div>
       <div className="flex-1 flex flex-col overflow-y-auto bg-m-lowest divide-y divide-m-line/60" role="grid" aria-label={`${title} conversations`}>
+        {loading && <div className="flex-1 flex items-center justify-center gap-3 py-20 text-m-muted t-body-md"><span className="w-4 h-4 rounded-full border-2 border-m-brand border-t-transparent animate-spin" />Decrypting your mail…</div>}
         {pageRows.map(r => <Row key={r.thread} row={r} />)}
-        {pageRows.length === 0 && (
+        {!loading && pageRows.length === 0 && (
           <div className="flex-1 flex flex-col items-center justify-center gap-2 py-20 text-m-muted">
             <Icon name={filtered ? "search_off" : "inbox"} className="text-[36px] text-m-faint" />
             <p className="t-body-md">{filtered ? "No conversations match your search." : `Your ${title.toLowerCase()} is clear.`}</p>

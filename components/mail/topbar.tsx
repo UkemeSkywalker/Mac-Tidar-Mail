@@ -9,7 +9,7 @@ import { useMail } from "./store";
 import { Avatar, Icon, MenuItem, Popover } from "./ui";
 
 export function Topbar({ searchRef }: { searchRef: React.RefObject<HTMLInputElement | null> }) {
-  const { query, setQuery, filters, setFilters, setPalette, setDialog, setSidebarOpen, collapsed, setCollapsed, account, switchAccount, toast } = useMail();
+  const { query, setQuery, filters, setFilters, setPalette, setDialog, setSidebarOpen, collapsed, setCollapsed, account, switchAccount, toast, live } = useMail();
   const [menu, setMenu] = useState<null | "filters" | "skin" | "apps" | "account">(null);
   const skin = useSkin();
   const close = () => setMenu(null);
@@ -88,7 +88,7 @@ export function Topbar({ searchRef }: { searchRef: React.RefObject<HTMLInputElem
           </button>
           <Popover open={menu === "account"} onClose={close} className="right-0 top-full mt-2 w-72 p-1">
             <div className="px-2 py-1 t-label-sm text-m-muted uppercase tracking-wider">Mac Tidar Account</div>
-            {accounts.map(a => (
+            {(live ? [account] : accounts).map(a => (
               <button key={a.email} type="button" onClick={() => { if (a.email !== account.email) switchAccount(a.email); close(); }} className="w-full flex items-center gap-3 px-2 py-2 rounded-m-xl hover:bg-m-mid text-left">
                 <Avatar person={a} />
                 <span className="flex-1 min-w-0"><b className="block t-label-md text-m-text truncate">{a.name}</b><span className="t-label-sm text-m-muted truncate">{a.email}</span></span>
@@ -96,8 +96,13 @@ export function Topbar({ searchRef }: { searchRef: React.RefObject<HTMLInputElem
               </button>
             ))}
             <div className="my-1 border-t border-m-line" />
-            <MenuItem icon="manage_accounts" onClick={() => { setDialog({ kind: "settings", tab: "Accounts" }); close(); }}>Manage accounts</MenuItem>
-            <MenuItem icon="logout" onClick={() => { toast("Signed out of the local demo"); close(); }}>Sign out</MenuItem>
+            {live ? <>
+              <MenuItem icon="lock" onClick={() => { close(); live.lock(); }}>Lock mailbox</MenuItem>
+              <MenuItem icon="logout" onClick={() => { close(); void live.signOut(); }}>Sign out</MenuItem>
+            </> : <>
+              <MenuItem icon="manage_accounts" onClick={() => { setDialog({ kind: "settings", tab: "Accounts" }); close(); }}>Manage accounts</MenuItem>
+              <MenuItem icon="logout" onClick={() => { toast("Signed out of the local demo"); close(); }}>Sign out</MenuItem>
+            </>}
           </Popover>
         </div>
       </div>

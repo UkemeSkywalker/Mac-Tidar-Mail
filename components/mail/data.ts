@@ -1,7 +1,13 @@
 // Demo mail data. Everything lives in the browser; nothing is sent anywhere.
 
 export type Person = { name: string; email: string; title?: string };
-export type Attachment = { name: string; size: string; icon: string };
+export type Attachment = {
+  name: string; size: string; icon: string;
+  /** Composer only: the file's bytes, held in memory until sent (never persisted unencrypted). */
+  data?: Uint8Array; type?: string;
+  /** Inline image referenced from the HTML body as cid:… */
+  cid?: string;
+};
 export type FolderId = "inbox" | "starred" | "snoozed" | "sent" | "drafts" | "scheduled" | "archive" | "spam" | "trash";
 export type Category = "primary" | "updates" | "newsletters";
 export type LabelTone = "product" | "engineering" | "investors" | "design" | "invoices" | "security" | "custom";
@@ -27,6 +33,25 @@ export type Message = {
   scheduledAt?: string | null;
   labels: string[];
   attachments: Attachment[];
+  /** Live mode: the server's message key; absent for demo data and local-only drafts. */
+  ref?: string;
+  /** Live mode: `preview` until the encrypted body has been fetched and decrypted. */
+  bodyState?: "preview" | "loading" | "loaded" | "error";
+  /** Live mode: encrypted to a key this session can't open (e.g. locked after a password reset). */
+  locked?: boolean;
+  rfcMessageId?: string | null;
+  references?: string[];
+  /** Live mode: a display name that impersonated another sender and was replaced by the real address. */
+  hiddenName?: string;
+  /** Mac Tidar → Mac Tidar mail, encrypted in the sender's browser. */
+  e2e?: boolean;
+  /** Result of checking the sender's signature on end-to-end mail. */
+  signature?: "verified" | "invalid" | "unverified" | "unsigned";
+  deliveryStatus?: "sent" | "delivered" | "bounced" | "complained" | "delayed" | "rejected" | null;
+  /** Decrypted HTML body (memory only), shown through the sanitizing viewer. */
+  html?: string;
+  /** cid → blob: URL for decrypted inline images. */
+  inlineUrls?: Record<string, string>;
 };
 
 export type Settings = { density: "comfortable" | "compact"; signature: string; notifications: boolean };

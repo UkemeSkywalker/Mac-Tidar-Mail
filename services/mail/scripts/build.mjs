@@ -1,7 +1,7 @@
 // Bundles each Lambda into dist/<name>/index.js for Terraform to zip.
 import { build } from "esbuild";
 
-const lambdas = { inbound: "src/inbound/handler.ts" };
+const lambdas = { inbound: "src/inbound/handler.ts", api: "src/api/handler.ts", "ses-events": "src/ses-events/handler.ts", push: "src/push/handler.ts" };
 
 for (const [name, entry] of Object.entries(lambdas)) {
   await build({

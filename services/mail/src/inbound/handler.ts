@@ -10,6 +10,7 @@ import { simpleParser, type AddressObject } from "mailparser";
 import { encryptInboundMessage } from "../crypto/inbound";
 import { normalizeAddress } from "../crypto/keys";
 import { folderGsi1, mailboxPk, META_SK, messageSk, threadGsi2, type MailboxMeta, type MessageItem } from "../shared/table";
+import { notifyMailboxes } from "../shared/notify";
 import { categorize, decide, type Verdicts } from "./policy";
 import { decryptSesObject } from "./raw-decrypt";
 import { threadId, threadRoot } from "./thread";
@@ -29,6 +30,8 @@ const addresses = (field?: AddressObject | AddressObject[]) =>
   (Array.isArray(field) ? field : field ? [field] : []).flatMap(a => a.value).map(v => v.address).filter((a): a is string => !!a).map(normalizeAddress);
 
 const domainOf = (address: string) => address.split("@").pop() ?? "";
+const refList = (refs?: string | string[], inReplyTo?: string) =>
+  [...new Set([...(Array.isArray(refs) ? refs : refs ? refs.split(/\s+/) : []), ...(inReplyTo ? [inReplyTo] : [])].filter(Boolean))].slice(-50);
 
 export function createHandler({ s3, kms, ddb, config, log = e => console.log(JSON.stringify(e)) }: InboundDeps) {
   async function processRecord(record: SESEventRecord) {
@@ -59,11 +62,13 @@ export function createHandler({ s3, kms, ddb, config, log = e => console.log(JSO
       }
 
       const recipients = [...new Set(receipt.recipients.map(normalizeAddress))].filter(r => config.receivingDomains.includes(domainOf(r)));
-      const receivedAt = new Date(receipt.timestamp ?? mail.timestamp).toISOString();
+      const receiptTime = receipt.timestamp ?? mail.timestamp;
+      const receivedAt = new Date(receiptTime).toISOString();
       const root = threadRoot(parsed.messageId, parsed.inReplyTo, parsed.references);
       const category = categorize(parsed.headers, fromAddress);
       const to = addresses(parsed.to), cc = addresses(parsed.cc);
       let pending = 0, stored = 0;
+      const notified: string[] = [];
 
       for (const mailbox of recipients) {
         const { Item } = await ddb.send(new GetCommand({ TableName: config.table, Key: { pk: mailboxPk(mailbox), sk: META_SK } }));
@@ -94,7 +99,7 @@ export function createHandler({ s3, kms, ddb, config, log = e => console.log(JSO
           gsi1pk: folderGsi1(mailbox, disposition.folder), gsi1sk: `${receivedAt}#${sesId}`,
           gsi2pk: threadGsi2(tid), gsi2sk: `${receivedAt}#${sesId}`,
           type: "message", id: sesId, mailbox: normalizeAddress(mailbox), folder: disposition.folder, kind: "message", category,
-          receivedAt, threadId: tid, rfcMessageId: parsed.messageId, fromAddress, toAddresses: to, ccAddresses: cc,
+          receivedAt, threadId: tid, rfcMessageId: parsed.messageId, references: refList(parsed.references, parsed.inReplyTo), fromAddress, toAddresses: to, ccAddresses: cc,
           size: plain.byteLength, read: false, starred: false, labels: [], encVersion: 1, keyFingerprint: key.fingerprint,
           header: enc.header, bodyKey, attachmentKeys, verdicts,
         };
@@ -105,12 +110,17 @@ export function createHandler({ s3, kms, ddb, config, log = e => console.log(JSO
           if (!(err instanceof ConditionalCheckFailedException)) throw err;
         }
         stored++;
+        notified.push(mailbox);
       }
 
       // Keep the (still KMS-encrypted) raw object only while a mailbox is waiting for its keys;
       // the bucket lifecycle removes it after 3 days regardless.
       if (pending === 0) await deleteRaw();
-      log({ event: "processed", sesId, stored, pending, folder: disposition.folder });
+      // Timings only (no content): how long the sender's provider held the mail, and how long we took.
+      const receivedMs = Date.parse(receiptTime);
+      log({ event: "processed", sesId, stored, pending, folder: disposition.folder,
+        senderLagMs: parsed.date ? receivedMs - parsed.date.getTime() : null, pipelineMs: Date.now() - receivedMs });
+      if (stored) await notifyMailboxes(ddb, config.table, notified);
     } finally {
       plain.fill(0);
     }

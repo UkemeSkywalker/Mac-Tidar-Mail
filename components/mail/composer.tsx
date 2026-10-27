@@ -77,6 +77,7 @@ export function Composer() {
   const [error, setError] = useState("");
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [sending, setSending] = useState(false);
   const editor = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -93,15 +94,20 @@ export function Composer() {
   if (!open) return null;
 
   const update = (patch: Partial<Draft>) => { editDraft(patch); setError(""); };
-  const addFiles = (files: FileList | null) => {
+  const addFiles = async (files: FileList | null) => {
     if (!files) return;
-    const ok = [...files].filter(f => f.size <= 10 * 1_048_576);
-    if (ok.length < files.length) toast("Files over 10 MB were skipped (demo limit)");
-    update({ attachments: [...draft.attachments, ...ok.map<Attachment>(f => ({ name: f.name, size: fmtSize(f.size), icon: f.type.includes("pdf") ? "picture_as_pdf" : f.type.startsWith("image/") ? "image" : "description" }))] });
+    const limit = 2 * 1_048_576;
+    const ok = [...files].filter(f => f.size <= limit);
+    if (ok.length < files.length) toast("Files over 2 MB were skipped (current limit)");
+    const added = await Promise.all(ok.map(async f => ({ name: f.name, size: fmtSize(f.size), type: f.type, data: new Uint8Array(await f.arrayBuffer()), icon: f.type.includes("pdf") ? "picture_as_pdf" : f.type.startsWith("image/") ? "image" : "description" } satisfies Attachment)));
+    update({ attachments: [...draft.attachments, ...added] });
   };
-  const deliver = (scheduleAt?: Date) => {
+  const deliver = async (scheduleAt?: Date) => {
+    if (sending) return;
     const sig = box.settings.signature.trim();
-    const err = send({ ...draft, body: sig && !draft.body.includes(sig) ? `${draft.body.trimEnd()}\n\n${sig}` : draft.body }, { scheduleAt });
+    setSending(true);
+    const err = await send({ ...draft, body: sig && !draft.body.includes(sig) ? `${draft.body.trimEnd()}\n\n${sig}` : draft.body }, { scheduleAt });
+    setSending(false);
     if (err) { setError(err); return; }
     setComposer(c => ({ ...c, open: false }));
   };
