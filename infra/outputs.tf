@@ -27,3 +27,16 @@ output "mail_bucket" { value = module.storage.bucket_name }
 output "mail_table" { value = module.table.table_name }
 output "ses_configuration_set" { value = module.ses.configuration_set_name }
 output "raw_mail_kms_key_arn" { value = module.kms.raw_mail_key_arn }
+
+output "web_hosting" {
+  value = {
+    app_id      = module.hosting.app_id
+    branch      = module.hosting.branch
+    default_url = module.hosting.default_url
+  }
+}
+
+output "web_dns_records_to_add_at_namecheap" {
+  description = "Certificate validation + mail.mactidar.com → Amplify. Raw strings from Amplify: '<host> <TYPE> <value>'."
+  value       = concat([module.hosting.certificate_verification_record], module.hosting.domain_records)
+}

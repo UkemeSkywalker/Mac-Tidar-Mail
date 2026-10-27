@@ -76,3 +76,13 @@ module "api" {
   alerts_topic_arn  = module.monitoring.alerts_topic_arn
   lambda_source_dir = "${path.root}/../services/mail/dist/api"
 }
+
+module "hosting" {
+  source             = "./modules/hosting"
+  providers          = { aws = aws.eu }
+  domain             = "mail.${var.root_domain}"
+  api_url            = trimsuffix(module.api.api_url, "/")
+  cognito_region     = var.region
+  mail_bucket        = module.storage.bucket_name
+  mail_bucket_region = var.region
+}
