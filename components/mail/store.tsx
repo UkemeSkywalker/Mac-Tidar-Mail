@@ -6,6 +6,7 @@ import { mailApi, type MessagePatch } from "./live/api";
 import type { LiveSession } from "./live/gate";
 import { bodyText, createLabel as newLiveLabel, decryptDraft, decryptSettings, defaultSettings, encryptDraft, encryptSettings, toMessage, uiLabels, type LiveSettings } from "./live/mapping";
 import { buildSend } from "./live/outgoing";
+import { connectPush } from "./live/push";
 import { readPublicKey } from "./crypto/core";
 import { initials, newId } from "./ui";
 
@@ -205,6 +206,12 @@ function useMailState(live?: LiveSession) {
       refreshing.current = false;
     }
   }, [live, loading, toast]);
+
+  // Instant delivery: the server pushes a content-free "new mail" signal; polling stays as a fallback.
+  useEffect(() => {
+    if (!live || loading) return;
+    return connectPush(live.address, () => void refresh());
+  }, [live, loading, refresh]);
 
   useEffect(() => {
     if (!live || loading) return;

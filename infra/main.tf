@@ -60,6 +60,8 @@ module "inbound" {
   data_key_arn          = module.kms.data_key_arn
   alerts_topic_arn      = module.monitoring.alerts_topic_arn
   lambda_source_dir     = "${path.root}/../services/mail/dist/inbound"
+  ws_endpoint           = module.push.management_endpoint
+  ws_manage_arn         = module.push.manage_connections_arn
 }
 
 module "api" {
@@ -81,6 +83,8 @@ module "api" {
   ses_identity_arn      = module.ses.identity_arn
   ses_configuration_set = module.ses.configuration_set_name
   ses_events_topic_arn  = module.ses.ses_events_topic_arn
+  ws_endpoint           = module.push.management_endpoint
+  ws_manage_arn         = module.push.manage_connections_arn
 }
 
 module "hosting" {
@@ -91,4 +95,16 @@ module "hosting" {
   cognito_region     = var.region
   mail_bucket        = module.storage.bucket_name
   mail_bucket_region = var.region
+  ws_url             = module.push.ws_url
+}
+
+module "push" {
+  source            = "./modules/push"
+  region            = var.region
+  user_pool_id      = var.cognito_user_pool_id
+  client_id         = module.auth_client.client_id
+  table_name        = module.table.table_name
+  table_arn         = module.table.table_arn
+  data_key_arn      = module.kms.data_key_arn
+  lambda_source_dir = "${path.root}/../services/mail/dist/push"
 }

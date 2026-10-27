@@ -12,6 +12,8 @@ variable "table_arn" { type = string }
 variable "data_key_arn" { type = string }
 variable "alerts_topic_arn" { type = string }
 variable "lambda_source_dir" { type = string }
+variable "ws_endpoint" { type = string }
+variable "ws_manage_arn" { type = string }
 variable "events_source_dir" { type = string }
 variable "account_id" { type = string }
 variable "local_domains" { type = list(string) }
@@ -110,6 +112,11 @@ data "aws_iam_policy_document" "api" {
     }
   }
   statement {
+    sid       = "PushNewMailSignal"
+    actions   = ["execute-api:ManageConnections"]
+    resources = [var.ws_manage_arn]
+  }
+  statement {
     sid       = "WriteSentCiphertext"
     actions   = ["s3:PutObject"]
     resources = ["${var.bucket_arn}/msg/*", "${var.bucket_arn}/att/*"]
@@ -149,6 +156,7 @@ resource "aws_lambda_function" "api" {
       MAIL_TABLE                          = var.table_name
       SES_CONFIGURATION_SET               = var.ses_configuration_set
       LOCAL_MAIL_DOMAINS                  = join(",", var.local_domains)
+      WS_ENDPOINT                         = var.ws_endpoint
       NODE_OPTIONS                        = "--enable-source-maps"
       AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1"
     }

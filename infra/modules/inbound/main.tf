@@ -14,6 +14,8 @@ variable "raw_mail_key_arn" { type = string }
 variable "data_key_arn" { type = string }
 variable "alerts_topic_arn" { type = string }
 variable "lambda_source_dir" { type = string }
+variable "ws_endpoint" { type = string }
+variable "ws_manage_arn" { type = string }
 
 locals {
   function_name = "mactidar-mail-inbound"
@@ -82,8 +84,13 @@ data "aws_iam_policy_document" "inbound" {
   }
   statement {
     sid       = "MailboxTable"
-    actions   = ["dynamodb:GetItem", "dynamodb:PutItem"]
+    actions   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:DeleteItem"]
     resources = [var.table_arn]
+  }
+  statement {
+    sid       = "PushNewMailSignal"
+    actions   = ["execute-api:ManageConnections"]
+    resources = [var.ws_manage_arn]
   }
   statement {
     sid       = "TableEncryptionKeyViaDynamoDB"
@@ -127,6 +134,7 @@ resource "aws_lambda_function" "inbound" {
       RAW_KMS_KEY_ARN                     = var.raw_mail_key_arn
       RECEIVING_DOMAINS                   = join(",", var.receiving_domains)
       LOCAL_DOMAINS                       = join(",", var.local_domains)
+      WS_ENDPOINT                         = var.ws_endpoint
       NODE_OPTIONS                        = "--enable-source-maps"
       AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1"
     }

@@ -14,6 +14,7 @@
     "redrive": "tsx scripts/redrive-inbound.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-apigatewaymanagementapi": "3.1156.0",
     "@aws-sdk/client-cognito-identity-provider": "3.1156.0",
     "@aws-sdk/client-dynamodb": "3.1156.0",
     "@aws-sdk/client-kms": "3.1156.0",
@@ -21,6 +22,7 @@
     "@aws-sdk/client-sesv2": "3.1156.0",
     "@aws-sdk/lib-dynamodb": "3.1156.0",
     "@aws-sdk/s3-request-presigner": "3.1156.0",
+    "aws-jwt-verify": "5.2.1",
     "mailparser": "3.12.4",
     "nodemailer": "10.2.1",
     "openpgp": "6.3.2"

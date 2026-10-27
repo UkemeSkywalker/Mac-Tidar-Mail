@@ -9,6 +9,7 @@ import { DeleteCommand, GetCommand, PutCommand, UpdateCommand, type DynamoDBDocu
 import MailComposer from "nodemailer/lib/mail-composer";
 import { threadId, threadRoot } from "../inbound/thread";
 import { folderGsi1, mailboxPk, META_SK, messageSk, sesPointerPk, threadGsi2, type MailboxMeta, type MessageItem } from "../shared/table";
+import { notifyMailboxes } from "../shared/notify";
 import type { Cipher, SendRequest } from "./send-validate";
 import { BadRequest } from "./validate";
 
@@ -128,6 +129,7 @@ export async function sendMessage(deps: SendDeps, sender: MailboxMeta, req: Send
       await ddb.send(new PutCommand({ TableName: table, Item: { pk: sesPointerPk(sesMessageId), sk: "PTR", mailboxPk: sent.pk, msgSk: sent.sk, expiresAt: inDays(30) } }));
     }
     console.log(JSON.stringify({ event: "sent", external: externalTo.length + externalCc.length + externalBcc.length, internal: req.internal.length }));
+    await notifyMailboxes(ddb, table, internalMetas.map(m => m.address));
     return sent;
   } catch (e) {
     if (!delivered) await releaseIdempotency();

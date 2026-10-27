@@ -14,6 +14,7 @@ variable "api_url" { type = string }
 variable "cognito_region" { type = string }
 variable "mail_bucket" { type = string }
 variable "mail_bucket_region" { type = string }
+variable "ws_url" { type = string }
 
 locals {
   csp = join("; ", [
@@ -23,7 +24,7 @@ locals {
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
     "font-src 'self' https://fonts.gstatic.com",
     "img-src 'self' data: blob:",
-    "connect-src 'self' ${var.api_url} https://cognito-idp.${var.cognito_region}.amazonaws.com https://${var.mail_bucket}.s3.${var.mail_bucket_region}.amazonaws.com",
+    "connect-src 'self' ${var.api_url} ${var.ws_url} https://cognito-idp.${var.cognito_region}.amazonaws.com https://${var.mail_bucket}.s3.${var.mail_bucket_region}.amazonaws.com",
     "worker-src 'self' blob:",
     "frame-src 'self' blob:",
     "object-src 'none'",

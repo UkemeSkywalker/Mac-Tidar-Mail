@@ -20,6 +20,7 @@ output "mail_app_config" {
     NEXT_PUBLIC_COGNITO_USER_POOL_ID = var.cognito_user_pool_id
     NEXT_PUBLIC_COGNITO_CLIENT_ID    = module.auth_client.client_id
     NEXT_PUBLIC_MAIL_API             = trimsuffix(module.api.api_url, "/")
+    NEXT_PUBLIC_MAIL_WS              = module.push.ws_url
   }
 }
 

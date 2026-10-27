@@ -10,6 +10,7 @@ import { simpleParser, type AddressObject } from "mailparser";
 import { encryptInboundMessage } from "../crypto/inbound";
 import { normalizeAddress } from "../crypto/keys";
 import { folderGsi1, mailboxPk, META_SK, messageSk, threadGsi2, type MailboxMeta, type MessageItem } from "../shared/table";
+import { notifyMailboxes } from "../shared/notify";
 import { categorize, decide, type Verdicts } from "./policy";
 import { decryptSesObject } from "./raw-decrypt";
 import { threadId, threadRoot } from "./thread";
@@ -66,6 +67,7 @@ export function createHandler({ s3, kms, ddb, config, log = e => console.log(JSO
       const category = categorize(parsed.headers, fromAddress);
       const to = addresses(parsed.to), cc = addresses(parsed.cc);
       let pending = 0, stored = 0;
+      const notified: string[] = [];
 
       for (const mailbox of recipients) {
         const { Item } = await ddb.send(new GetCommand({ TableName: config.table, Key: { pk: mailboxPk(mailbox), sk: META_SK } }));
@@ -107,12 +109,14 @@ export function createHandler({ s3, kms, ddb, config, log = e => console.log(JSO
           if (!(err instanceof ConditionalCheckFailedException)) throw err;
         }
         stored++;
+        notified.push(mailbox);
       }
 
       // Keep the (still KMS-encrypted) raw object only while a mailbox is waiting for its keys;
       // the bucket lifecycle removes it after 3 days regardless.
       if (pending === 0) await deleteRaw();
       log({ event: "processed", sesId, stored, pending, folder: disposition.folder });
+      if (stored) await notifyMailboxes(ddb, config.table, notified);
     } finally {
       plain.fill(0);
     }
