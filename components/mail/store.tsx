@@ -242,7 +242,18 @@ function useMailState(live?: LiveSession) {
         const sender = m.e2e && m.folder !== "sent" ? await mailApi.publicKey(m.from.email).catch(() => null) : null;
         const verificationKeys = sender ? [await readPublicKey(sender.publicKey)] : undefined;
         const { body, signature } = await live.session.decryptBody(await mailApi.download(live.address, m.ref!, "body"), { verificationKeys });
-        mark([m.id], () => ({ body: bodyText(body), bodyState: "loaded", ...(m.e2e && m.folder !== "sent" ? { signature } : {}) }));
+        // Inline images used by the HTML body are decrypted here and shown via blob: URLs.
+        const inlineUrls: Record<string, string> = {};
+        if (body.html) {
+          for (const [i, a] of m.attachments.entries()) {
+            if (!a.cid || !body.html.includes(`cid:${a.cid}`) || !/^image\/(png|jpe?g|gif|webp)$/i.test(a.type ?? "")) continue;
+            try {
+              const { data } = await live.session.decryptAttachment(await mailApi.download(live.address, m.ref!, "attachment", i));
+              inlineUrls[a.cid] = URL.createObjectURL(new Blob([data as BlobPart], { type: a.type }));
+            } catch { /* leave the image out */ }
+          }
+        }
+        mark([m.id], () => ({ body: bodyText(body), html: body.html, inlineUrls, bodyState: "loaded", ...(m.e2e && m.folder !== "sent" ? { signature } : {}) }));
       } catch { mark([m.id], () => ({ bodyState: "error" })); }
     });
   };

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Message, Person } from "./data";
+import { SafeHtml } from "./live/safe-html";
 import { useMail } from "./store";
 import { Avatar, fmtLongDate, newId, Icon, IconButton, LabelChip, MenuItem, Popover, snoozeOptions, UrgentChip } from "./ui";
 
@@ -113,7 +114,9 @@ function MessageCard({ m, me, onReply, onReplyAll }: { m: Message; me: string; o
         {m.locked ? <p className="flex items-center gap-2 text-m-muted"><Icon name="lock" className="text-[18px]" />This message is encrypted to an older key. Recover your older keys (Settings → Accounts) to read it.</p>
           : m.bodyState === "loading" ? <p className="flex items-center gap-2 text-m-muted"><span className="w-3.5 h-3.5 rounded-full border-2 border-m-brand border-t-transparent animate-spin" />Decrypting…</p>
           : m.bodyState === "error" ? <p className="text-m-error">Couldn’t decrypt this message.</p>
-          : m.rich === "q3-roadmap" ? <Q3RoadmapBody /> : m.body.split(/\n{2,}/).map((p, i) => <p key={i} className="whitespace-pre-line break-words">{p}</p>)}
+          : m.rich === "q3-roadmap" ? <Q3RoadmapBody />
+          : m.html ? <SafeHtml html={m.html} inlineImages={m.inlineUrls ?? {}} />
+          : m.body.split(/\n{2,}/).map((p, i) => <p key={i} className="whitespace-pre-line break-words">{p}</p>)}
       </div>
       {total > 0 && (
         <div className="p-space-lg bg-m-low/40 space-y-space-sm">

@@ -5,6 +5,8 @@ export type Attachment = {
   name: string; size: string; icon: string;
   /** Composer only: the file's bytes, held in memory until sent (never persisted unencrypted). */
   data?: Uint8Array; type?: string;
+  /** Inline image referenced from the HTML body as cid:… */
+  cid?: string;
 };
 export type FolderId = "inbox" | "starred" | "snoozed" | "sent" | "drafts" | "scheduled" | "archive" | "spam" | "trash";
 export type Category = "primary" | "updates" | "newsletters";
@@ -44,6 +46,10 @@ export type Message = {
   /** Result of checking the sender's signature on end-to-end mail. */
   signature?: "verified" | "invalid" | "unverified" | "unsigned";
   deliveryStatus?: "sent" | "delivered" | "bounced" | "complained" | "delayed" | "rejected" | null;
+  /** Decrypted HTML body (memory only), shown through the sanitizing viewer. */
+  html?: string;
+  /** cid → blob: URL for decrypted inline images. */
+  inlineUrls?: Record<string, string>;
 };
 
 export type Settings = { density: "comfortable" | "compact"; signature: string; notifications: boolean };

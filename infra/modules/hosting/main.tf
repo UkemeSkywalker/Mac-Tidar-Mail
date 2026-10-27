@@ -21,8 +21,8 @@ locals {
     "default-src 'self'",
     # Next.js static export inlines its bootstrap scripts; openpgp's Argon2 needs WebAssembly.
     "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-    "font-src 'self' https://fonts.gstatic.com",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self'",
     "img-src 'self' data: blob:",
     "connect-src 'self' ${var.api_url} ${var.ws_url} https://cognito-idp.${var.cognito_region}.amazonaws.com https://${var.mail_bucket}.s3.${var.mail_bucket_region}.amazonaws.com",
     "worker-src 'self' blob:",

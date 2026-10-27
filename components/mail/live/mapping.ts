@@ -58,7 +58,7 @@ export async function toMessage(item: ServerMessage, session: MailboxSession, la
     starred: item.starred,
     snoozedUntil: item.snoozedUntil,
     labels: item.labels.map(id => labelNames.get(id)).filter((n): n is string => !!n),
-    attachments: header?.attachments?.map(a => ({ name: a.filename, size: fmtSize(a.size), icon: iconFor(a.contentType, a.filename) })) ?? [],
+    attachments: header?.attachments?.map(a => ({ name: a.filename, size: fmtSize(a.size), icon: iconFor(a.contentType, a.filename), type: a.contentType, ...(a.contentId ? { cid: a.contentId.replace(/^<|>$/g, "") } : {}) })) ?? [],
     bodyState: "preview",
     locked: !header,
     rfcMessageId: item.rfcMessageId,
