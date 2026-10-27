@@ -160,6 +160,61 @@ function useMailState(live?: LiveSession) {
     for (let i = 0; i < removed.length; i += 100) mailApi.deleteForever(live.address, removed.slice(i, i + 100)).catch(fail);
   }, [db]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Keep a handle on the latest mailbox for background refreshes (updated after each render).
+  const dbRef = useRef(db);
+  useEffect(() => { dbRef.current = db; }, [db]);
+  const refreshing = useRef(false);
+
+  /** Pull new mail and changes made elsewhere (live mode). Local edits not yet echoed back win. */
+  const refresh = useCallback(async (manual = false) => {
+    if (!live || loading || refreshing.current || !synced.current) return;
+    refreshing.current = true;
+    try {
+      const names = new Map(liveSettings.current?.settings.labels.map(l => [l.id, l.name]) ?? []);
+      const ids = labelIds();
+      const items = (await Promise.all((["inbox", "sent", "archive", "spam", "trash"] as const).map(f => mailApi.listFolder(live.address, f)))).flat();
+      const local = new Map(dbRef.current.accounts[dbRef.current.current].messages.map(m => [m.id, m]));
+      const serverIds = new Set(items.map(i => i.sk));
+      const added: Message[] = [], changed = new Map<string, Partial<Message>>(), removed = new Set<string>();
+      for (const it of items) {
+        const mine = local.get(it.sk);
+        if (!mine) { added.push(await toMessage(it, live.session, names)); continue; }
+        const server: Synced = { read: it.read, starred: it.starred, folder: it.folder, labels: [...it.labels].sort(), snoozedUntil: it.snoozedUntil };
+        const last = synced.current.get(it.sk);
+        if (!last || JSON.stringify(server) === JSON.stringify(last)) continue;
+        if (JSON.stringify(snapshot(mine, ids)) !== JSON.stringify(last)) continue; // a local change is still on its way
+        changed.set(it.sk, { read: it.read, starred: it.starred, folder: it.folder, snoozedUntil: it.snoozedUntil, deliveryStatus: it.deliveryStatus, labels: it.labels.map(id => names.get(id)).filter((n): n is string => !!n) });
+        synced.current.set(it.sk, server);
+      }
+      for (const [id, m] of local) if (m.ref && !serverIds.has(id) && synced.current.has(id)) { removed.add(id); synced.current.delete(id); }
+      for (const m of added) synced.current.set(m.id, snapshot(m, ids));
+      if (added.length || changed.size || removed.size) {
+        setDb(d => {
+          const b = d.accounts[d.current];
+          const known = new Set(b.messages.map(m => m.id));
+          const messages = [...added.filter(m => !known.has(m.id)), ...b.messages.filter(m => !removed.has(m.id)).map(m => changed.has(m.id) ? { ...m, ...changed.get(m.id) } : m)];
+          return { ...d, accounts: { ...d.accounts, [d.current]: { ...b, messages } } };
+        });
+      }
+      const fresh = added.filter(m => m.folder === "inbox" && !m.read).length;
+      if (fresh) toast(fresh === 1 ? "1 new message" : `${fresh} new messages`);
+      else if (manual) toast("Mail is up to date");
+    } catch {
+      if (manual) toast("Couldn’t refresh your mail. Check your connection.");
+    } finally {
+      refreshing.current = false;
+    }
+  }, [live, loading, toast]);
+
+  useEffect(() => {
+    if (!live || loading) return;
+    const tick = () => { if (document.visibilityState === "visible") void refresh(); };
+    const timer = setInterval(tick, 30_000);
+    window.addEventListener("focus", tick);
+    document.addEventListener("visibilitychange", tick);
+    return () => { clearInterval(timer); window.removeEventListener("focus", tick); document.removeEventListener("visibilitychange", tick); };
+  }, [live, loading, refresh]);
+
   /** Fetch and decrypt the bodies of a conversation's messages (live mode). */
   const loadBodies = async (thread: string) => {
     if (!live) return;
@@ -368,7 +423,7 @@ function useMailState(live?: LiveSession) {
   }, []);
 
   return {
-    live, loading, loadBodies, downloadAttachment,
+    live, loading, loadBodies, downloadAttachment, refresh,
     db, box, account, rows, threadMessages, folder, setFolder, tab, setTab: (t: Category) => { setTab(t); setSelected([]); setPage(0); }, query, setQuery: (q: string) => { setQuery(q); setPage(0); if (q) setView({ kind: "list" }); },
     filters, setFilters, sort, setSort, selected, setSelected, view, openThread, closeThread, page, setPage,
     move, destroy, markRead, toggleStar, snooze, toggleLabel, createLabel, updateSettings, emptyTrash, resetAccount, switchAccount,

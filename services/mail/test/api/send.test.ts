@@ -16,7 +16,7 @@ const ddb = mockClient(DynamoDBDocumentClient), s3 = mockClient(S3Client), ses =
 let myFp = "", friendFp = "", myPub: PublicKey, friendPub: PublicKey;
 let items: Record<string, unknown>[], objects: { key: string; body: Uint8Array }[], sentMime = "";
 
-const api = () => createHandler({ ddb: DynamoDBDocumentClient.from(new DynamoDBClient({})), s3: new S3Client({}), ses: new SESv2Client({}), config: { table: "t", bucket: "b", configurationSet: "mactidar-mail", localDomains: ["beta.mactidar.com"] } });
+const api = () => createHandler({ ddb: DynamoDBDocumentClient.from(new DynamoDBClient({})), s3: new S3Client({}), ses: new SESv2Client({}), config: { table: "t", bucket: "b", configurationSet: "mactidar-mail", localDomains: ["beta.mactidar.com"], region: "af-south-1" } });
 const meta = (address: string, fp: string, owner = OWNER) => ({ pk: `MAILBOX#${address}`, sk: "META", address, ownerSub: owner, displayName: "Ukeme Eseme", status: "active", gsi1pk: "x", gsi1sk: "x", createdAt: "x", keyState: { version: 1, address, primaryFingerprint: fp, keys: [{ fingerprint: fp, publicKey: "p", privateKey: "x", status: "active", createdAt: "x" }], recovery: null } });
 
 async function cipherFor(keys: PublicKey[], fp: string, attachments: Uint8Array[] = []) {
@@ -63,7 +63,9 @@ describe("sending", () => {
     expect(items).toContainEqual(expect.objectContaining({ pk: "SESMSG#ses-123" }));
     for (const it of items) expect(containsPlaintext(JSON.stringify(it), SECRET)).toBe(false);
     for (const o of objects) expect(containsPlaintext(o.body, SECRET)).toBe(false);
-    expect(r.body.message).toMatchObject({ folder: "sent", rfcMessageId: expect.stringMatching(/@beta\.mactidar\.com>$/) });
+    // SES rewrites Message-ID; the Sent copy records the one recipients see so their replies thread.
+    expect(r.body.message).toMatchObject({ folder: "sent", rfcMessageId: "<ses-123@af-south-1.amazonses.com>" });
+    expect(mime).toMatch(/Message-ID: <[^>]+@beta\.mactidar\.com>/);
   });
 
   it("delivers Mac Tidar mail end to end without SES and without any readable content", async () => {

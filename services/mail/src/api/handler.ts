@@ -13,7 +13,7 @@ import { Conflict as SendConflict, sendMessage } from "./send";
 import { validateSend } from "./send-validate";
 import { BadRequest, FOLDERS, validateKeyState, validatePatch, validateSettings, validateSks } from "./validate";
 
-export interface ApiConfig { table: string; bucket: string; configurationSet: string; localDomains: string[] }
+export interface ApiConfig { table: string; bucket: string; configurationSet: string; localDomains: string[]; region: string }
 export interface ApiDeps { ddb: DynamoDBDocumentClient; s3: S3Client; ses: SESv2Client; config: ApiConfig; presign?: (s3: S3Client, cmd: GetObjectCommand) => Promise<string> }
 type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
 type Result = APIGatewayProxyStructuredResultV2;
@@ -207,7 +207,7 @@ export function createHandler({ ddb, s3, ses, config, presign = (c, cmd) => getS
       case "POST /v1/mailboxes/{address}/send": {
         const meta = await ownedMailbox(sub, p.address);
         const req = validateSend(parseBody(event, 6_000_000), config.localDomains);
-        const sent = await sendMessage({ ddb, s3, ses, table: T, bucket: config.bucket, configurationSet: config.configurationSet }, meta, req);
+        const sent = await sendMessage({ ddb, s3, ses, table: T, bucket: config.bucket, configurationSet: config.configurationSet, region: config.region }, meta, req);
         return json(200, { message: publicMessage(sent) });
       }
 
@@ -268,7 +268,7 @@ export const handler = (event: Event) => {
     s3: new S3Client({}),
     ses: new SESv2Client({}),
     config: {
-      table: env("MAIL_TABLE"), bucket: env("MAIL_BUCKET"), configurationSet: env("SES_CONFIGURATION_SET"),
+      table: env("MAIL_TABLE"), bucket: env("MAIL_BUCKET"), configurationSet: env("SES_CONFIGURATION_SET"), region: env("AWS_REGION"),
       localDomains: env("LOCAL_MAIL_DOMAINS").split(",").map(d => d.trim().toLowerCase()),
     },
   });

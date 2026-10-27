@@ -47,7 +47,7 @@ function Tabs() {
 }
 
 function Toolbar({ total }: { total: number }) {
-  const { rows, selected, setSelected, folder, move, destroy, markRead, snooze, toggleLabel, box, updateSettings, sort, setSort, page, setPage, toast } = useMail();
+  const { rows, selected, setSelected, folder, move, destroy, markRead, snooze, toggleLabel, box, updateSettings, sort, setSort, page, setPage, toast, live, refresh } = useMail();
   const [menu, setMenu] = useState<null | "select" | "snooze" | "label" | "move" | "sort">(null);
   const close = () => setMenu(null);
   const toggle = (m: typeof menu) => setMenu(c => c === m ? null : m);
@@ -113,7 +113,7 @@ function Toolbar({ total }: { total: number }) {
       </div>
 
       <div className="flex items-center gap-space-sm t-label-md text-m-muted">
-        <IconButton icon="refresh" title="Sync inbox (U)" onClick={() => toast("Mail is up to date")} className="hidden sm:block" />
+        <IconButton icon="refresh" title="Check for new mail" onClick={() => live ? void refresh(true) : toast("Mail is up to date")} className="hidden sm:block" />
         <div className="hidden md:flex items-center bg-m-mid p-0.5 rounded-m-lg">
           {(["comfortable", "compact"] as const).map(d => (
             <button key={d} type="button" onClick={() => updateSettings({ density: d })}

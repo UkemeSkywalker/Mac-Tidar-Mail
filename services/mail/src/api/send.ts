@@ -14,7 +14,7 @@ import { BadRequest } from "./validate";
 
 export const DAILY_RECIPIENT_LIMIT = 300;
 
-export interface SendDeps { ddb: DynamoDBDocumentClient; s3: S3Client; ses: SESv2Client; table: string; bucket: string; configurationSet: string }
+export interface SendDeps { ddb: DynamoDBDocumentClient; s3: S3Client; ses: SESv2Client; table: string; bucket: string; configurationSet: string; region: string }
 export class Conflict extends Error {}
 
 const domainOf = (a: string) => a.split("@")[1] ?? "";
@@ -118,8 +118,11 @@ export async function sendMessage(deps: SendDeps, sender: MailboxMeta, req: Send
 
     delivered ||= req.internal.length > 0;
     await Promise.all(req.internal.map((d, i) => store(internalMetas[i]!.address, "inbox", d, { e2e: true })));
+    // SES replaces Message-ID with "<ses id>@<region>.amazonses.com"; that's what outside replies will reference.
+    const sesRfcId = sesMessageId ? `<${sesMessageId}@${deps.region}.amazonses.com>` : undefined;
     const sent = await store(sender.address, "sent", req.sentCopy, {
       bccAddresses: req.bcc, sesMessageId, deliveryStatus: sesMessageId ? "sent" : "delivered", e2e: !sesMessageId,
+      ...(sesRfcId ? { rfcMessageId: sesRfcId, references: [...references, rfcMessageId].slice(-50) } : {}),
     });
     if (sesMessageId) {
       await ddb.send(new PutCommand({ TableName: table, Item: { pk: sesPointerPk(sesMessageId), sk: "PTR", mailboxPk: sent.pk, msgSk: sent.sk, expiresAt: inDays(30) } }));
