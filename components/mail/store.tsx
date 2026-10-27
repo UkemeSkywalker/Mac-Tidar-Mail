@@ -43,6 +43,12 @@ export const folderMatch = (folder: string, m: Message) => {
   }
 };
 
+/** Runs `fn` over `items` with at most `limit` in flight. */
+async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<void>) {
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => { while (next < items.length) await fn(items[next++]!); }));
+}
+
 const isFuture = (d?: Date): d is Date => !!d && d.getTime() > Date.now();
 
 export const blankDraft = (): Draft => ({ id: newId("d"), to: [], cc: [], subject: "", body: "", attachments: [] });
@@ -230,14 +236,15 @@ function useMailState(live?: LiveSession) {
     if (!pending.length) return;
     const mark = (ids: string[], patch: (m: Message) => Partial<Message>) => setDb(d => ({ ...d, accounts: { ...d.accounts, [d.current]: { ...d.accounts[d.current], messages: d.accounts[d.current].messages.map(m => ids.includes(m.id) ? { ...m, ...patch(m) } : m) } } }));
     mark(pending.map(m => m.id), () => ({ bodyState: "loading" }));
-    await Promise.all(pending.map(async m => {
+    // At most 3 downloads at a time: the AWS account runs only 10 Lambdas concurrently in af-south-1.
+    await mapLimit(pending, 3, async m => {
       try {
         const sender = m.e2e && m.folder !== "sent" ? await mailApi.publicKey(m.from.email).catch(() => null) : null;
         const verificationKeys = sender ? [await readPublicKey(sender.publicKey)] : undefined;
         const { body, signature } = await live.session.decryptBody(await mailApi.download(live.address, m.ref!, "body"), { verificationKeys });
         mark([m.id], () => ({ body: bodyText(body), bodyState: "loaded", ...(m.e2e && m.folder !== "sent" ? { signature } : {}) }));
       } catch { mark([m.id], () => ({ bodyState: "error" })); }
-    }));
+    });
   };
 
   /** Decrypt an attachment in the browser and hand it to the user as a download (live mode). */
