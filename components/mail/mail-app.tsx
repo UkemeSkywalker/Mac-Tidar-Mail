@@ -34,18 +34,16 @@ function Toasts() {
 
 function Shell() {
   const mail = useMail();
-  const { view, collapsed, composer, palette, setDialog, compose, openThread } = mail;
+  const { view, collapsed, composer, palette, compose, openThread } = mail;
   const skin = useSkin();
   const search = useRef<HTMLInputElement>(null);
   const pendingG = useRef(0);
   const state = useRef(mail);
   useEffect(() => { state.current = mail; });
 
-  // Deep links: ?mode=signin|signup from the homepage, ?thread=<id> from "open in new tab".
+  // Deep link: ?thread=<id> from "open in new tab".
   useEffect(() => {
-    const p = new URLSearchParams(location.search);
-    const mode = p.get("mode"), thread = p.get("thread");
-    if (!mail.live && (mode === "signin" || mode === "signup")) setDialog({ kind: "auth", mode });
+    const thread = new URLSearchParams(location.search).get("thread");
     if (thread) openThread(thread);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -121,7 +119,10 @@ function LiveMail() {
   return <MailProvider live={live}><Shell /></MailProvider>;
 }
 
+// The old offline demo kept fake mail in localStorage; clear it from browsers that ran it.
+if (typeof window !== "undefined") try { localStorage.removeItem("mtmail-v2"); } catch { /* storage blocked */ }
+
 export default function MailApp() {
-  if (liveEnabled) return <LiveGate><LiveMail /></LiveGate>;
-  return <MailProvider><Shell /></MailProvider>;
+  if (!liveEnabled) return <p className="p-8 t-body-md">Mac Tidar Mail isn’t configured. Copy .env.example to .env.local and set NEXT_PUBLIC_MAIL_API.</p>;
+  return <LiveGate><LiveMail /></LiveGate>;
 }

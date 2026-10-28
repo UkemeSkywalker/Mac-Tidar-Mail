@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import { saveSkin, useSkin } from "../skin-store";
-import { accounts } from "./data";
 import { MAIL_SKINS } from "./skins";
 import { useMail } from "./store";
 import { Icon } from "./ui";
@@ -11,12 +10,11 @@ type Command = { id: string; label: string; hint?: string; icon: string; group: 
 
 export function CommandPalette({ focusSearch }: { focusSearch: () => void }) {
   const mail = useMail();
-  const { setPalette, compose, setFolder, setQuery, setDialog, switchAccount, account, box, openThread, setFilters } = mail;
+  const { setPalette, compose, setFolder, setQuery, setDialog, live, box, openThread, setFilters } = mail;
   const skin = useSkin();
   const [text, setText] = useState("");
   const [active, setActive] = useState(0);
   const lastLight = MAIL_SKINS.find(s => !s.dark && s.key !== skin)?.key ?? "forest";
-  const nextAccount = accounts.find(a => a.email !== account.email)!;
   const done = (fn: () => void) => () => { setPalette(false); fn(); };
 
   const commands = useMemo<Command[]>(() => [
@@ -24,16 +22,17 @@ export function CommandPalette({ focusSearch }: { focusSearch: () => void }) {
     { id: "search", label: "Search", hint: "/", icon: "search", group: "Actions", run: done(focusSearch) },
     { id: "inbox", label: "Go Inbox", hint: "G I", icon: "inbox", group: "Actions", run: done(() => setFolder("inbox")) },
     { id: "theme", label: "Toggle Theme", hint: "⌘D", icon: "dark_mode", group: "Actions", run: done(() => saveSkin(skin === "cyber" ? lastLight : "cyber")) },
-    { id: "account", label: nextAccount.email, icon: "switch_account", group: "Actions", run: done(() => switchAccount(nextAccount.email)) },
-    ...(["starred", "snoozed", "sent", "drafts", "scheduled", "archive", "spam", "trash"] as const).map(f => ({ id: `go-${f}`, label: `Go to ${f[0].toUpperCase()}${f.slice(1)}`, icon: "folder_open", group: "Navigate", run: done(() => setFolder(f)) })),
+    ...(live.switchMailbox ? [{ id: "account", label: "Switch mailbox", icon: "switch_account", group: "Actions", run: done(() => live.switchMailbox?.()) }] : []),
+    ...(["starred", "snoozed", "sent", "drafts", "archive", "spam", "trash"] as const).map(f => ({ id: `go-${f}`, label: `Go to ${f[0].toUpperCase()}${f.slice(1)}`, icon: "folder_open", group: "Navigate", run: done(() => setFolder(f)) })),
     ...box.labels.map(l => ({ id: `label-${l.name}`, label: `Open label: ${l.name}`, icon: "label", group: "Navigate", run: done(() => setFolder(`label:${l.name}`)) })),
     { id: "unread", label: "Show unread mail", icon: "mark_email_unread", group: "Filters", run: done(() => { setFolder("inbox"); setFilters({ unread: true }); }) },
     { id: "attach", label: "Show mail with attachments", icon: "attach_file", group: "Filters", run: done(() => setFilters({ attachments: true })) },
     ...MAIL_SKINS.map(s => ({ id: `skin-${s.key}`, label: `Skin: ${s.name}`, hint: s.key === skin ? "✓" : undefined, icon: "palette", group: "Appearance", run: done(() => saveSkin(s.key)) })),
     { id: "settings", label: "Settings", icon: "settings", group: "General", run: done(() => setDialog({ kind: "settings" })) },
     { id: "shortcuts", label: "Keyboard shortcuts", hint: "?", icon: "keyboard", group: "General", run: done(() => setDialog({ kind: "shortcuts" })) },
-    ...accounts.filter(a => a.email !== account.email).map(a => ({ id: `acct-${a.email}`, label: `Switch to ${a.name}`, icon: "switch_account", group: "Accounts", run: done(() => switchAccount(a.email)) })),
-  ], [skin, box.labels, account.email]); // eslint-disable-line react-hooks/exhaustive-deps
+    { id: "lock", label: "Lock mailbox", icon: "lock", group: "Accounts", run: done(() => live.lock()) },
+    { id: "signout", label: "Sign out", icon: "logout", group: "Accounts", run: done(() => void live.signOut()) },
+  ], [skin, box.labels, live]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const q = text.trim().toLowerCase();
   const threadHits = q.length > 1 ? [...new Map(box.messages.filter(m => m.kind === "message" && (m.subject + " " + m.from.name).toLowerCase().includes(q)).map(m => [m.thread, m])).values()].slice(0, 4)

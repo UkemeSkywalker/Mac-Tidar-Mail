@@ -21,6 +21,8 @@ export interface LiveSession {
   lock: () => void;
   signOut: () => Promise<void>;
   openRecovery: () => void;
+  /** Present when this account has more than one mailbox. */
+  switchMailbox?: () => void;
 }
 
 const LiveContext = createContext<LiveSession | null>(null);
@@ -35,7 +37,7 @@ export function useLiveSession(): LiveSession {
 type Stage =
   | { s: "signin"; error?: string } | { s: "totp"; error?: string } | { s: "newPassword"; error?: string }
   | { s: "forgot"; error?: string } | { s: "forgotCode"; error?: string } | { s: "working"; label: string }
-  | { s: "noMailbox" } | { s: "pick"; mailboxes: ServerMailbox[] }
+  | { s: "noMailbox" } | { s: "pick"; mailboxes: ServerMailbox[] } | { s: "switch"; mailboxes: ServerMailbox[]; error?: string }
   | { s: "recoveryShow"; code: string; file: string } | { s: "passwordChanged"; error?: string }
   | { s: "ready" } | { s: "locked"; error?: string } | { s: "fatal"; error: string };
 
@@ -82,6 +84,10 @@ export function LiveGate({ children }: { children: ReactNode }) {
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const password = useRef<string>("");
   const mailbox = useRef<ServerMailbox | null>(null);
+  /** Every mailbox on this account, and the one to open after a switch's fresh sign-in. */
+  const boxes = useRef<ServerMailbox[]>([]);
+  const target = useRef<string | null>(null);
+  const [multiple, setMultiple] = useState(false);
   const keyState = useRef<{ state: MailboxKeyState; version: number } | null>(null);
   const [session, setSession] = useState<MailboxSession | null>(null);
   /** Render-side copy of the open mailbox (refs above are for async flows only). */
@@ -136,6 +142,11 @@ export function LiveGate({ children }: { children: ReactNode }) {
   async function afterSignIn() {
     setStage({ s: "working", label: "Finding your mailbox…" });
     const list = await mailApi.mailboxes();
+    boxes.current = list;
+    setMultiple(list.length > 1);
+    const chosen = list.find(m => m.address === target.current);
+    target.current = null;
+    if (chosen) return openMailbox(chosen);
     if (!list.length) return setStage({ s: "noMailbox" });
     if (list.length > 1) return setStage({ s: "pick", mailboxes: list });
     await openMailbox(list[0]!);
@@ -168,6 +179,12 @@ export function LiveGate({ children }: { children: ReactNode }) {
     setStage({ s: "signin" });
   }, [session]);
 
+  // Each mailbox key is unlocked with the password, which is never kept; switching signs in again.
+  const switchMailbox = useCallback(() => {
+    session?.lock(); setSession(null); password.current = "";
+    setStage({ s: "switch", mailboxes: boxes.current.filter(m => m.address !== mailbox.current?.address) });
+  }, [session]);
+
   const wrap = (node: ReactNode) => <div className={`mail-root mail-skin-${skin} t-body-md antialiased`}>{node}</div>;
   const form = (e: React.FormEvent<HTMLFormElement>) => { e.preventDefault(); return new FormData(e.currentTarget); };
   const field = (f: FormData, name: string) => String(f.get(name) ?? "");
@@ -187,6 +204,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
     const live: LiveSession = {
       address: opened.address, displayName: opened.displayName, session,
       lockedKeys: opened.lockedKeys, lock, signOut: doSignOut, openRecovery: () => setRecoveryOpen(true),
+      ...(multiple ? { switchMailbox } : {}),
     };
     return <>
       <LiveContext.Provider value={live}>{children}</LiveContext.Provider>
@@ -249,6 +267,26 @@ export function LiveGate({ children }: { children: ReactNode }) {
       return wrap(<Shell title="Choose a mailbox">
         {stage.mailboxes.map(m => <button key={m.address} type="button" onClick={() => run(() => openMailbox(m), error => ({ s: "fatal", error }))} className="w-full flex items-center justify-between p-3 rounded-m-xl border border-m-line hover:bg-m-low text-left"><span><b className="block t-headline-sm text-m-text">{m.displayName}</b><span className="t-body-sm text-m-muted">{m.address}</span></span><Icon name="arrow_forward" className="text-m-muted" /></button>)}
       </Shell>);
+    case "switch": {
+      const others = stage.mailboxes;
+      return wrap(<Shell title="Switch mailbox" subtitle="Enter your password to unlock the other mailbox.">
+        <form className="space-y-4" onSubmit={e => { const f = form(e); run(async () => {
+          await signOut().catch(() => {});
+          target.current = field(f, "mailbox");
+          await doSignIn(field(f, "password"));
+        }, error => ({ s: "switch", mailboxes: others, error })); }}>
+          <div className="space-y-2">
+            {others.map((m, i) => <label key={m.address} className="flex items-center gap-3 p-3 rounded-m-xl border border-m-line hover:bg-m-low cursor-pointer">
+              <input type="radio" name="mailbox" value={m.address} defaultChecked={i === 0} required />
+              <span><b className="block t-headline-sm text-m-text">{m.displayName}</b><span className="t-body-sm text-m-muted">{m.address}</span></span>
+            </label>)}
+          </div>
+          <Field label="Password" name="password" type="password" autoComplete="current-password" required autoFocus />
+          <ErrorLine text={stage.error} /><Primary type="submit">Open mailbox</Primary>
+        </form>
+        <Link onClick={doSignOut}>Sign out instead</Link>
+      </Shell>);
+    }
     case "recoveryShow":
       return wrap(<RecoveryCode code={stage.code} file={stage.file} address={opened?.address ?? ""} onDone={() => setStage({ s: "ready" })} />);
     case "passwordChanged":

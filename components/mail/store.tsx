@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { accounts, Category, FolderId, Label, Mailbox, makeMailbox, Message, Person, Settings } from "./data";
+import { Category, FolderId, Label, Mailbox, Message, Person, Settings } from "./data";
 import { mailApi, type MessagePatch } from "./live/api";
 import type { LiveSession } from "./live/gate";
 import { bodyText, createLabel as newLiveLabel, decryptDraft, decryptSettings, defaultSettings, encryptDraft, encryptSettings, toMessage, uiLabels, type LiveSettings } from "./live/mapping";
@@ -11,8 +11,6 @@ import { isRiskyFile } from "./live/trust";
 import { readPublicKey } from "./crypto/core";
 import { initials, newId } from "./ui";
 
-const STORE = "mtmail-v2";
-
 type Db = { current: string; accounts: Record<string, Mailbox> };
 export type View = { kind: "list" } | { kind: "thread"; thread: string };
 export type Filters = { unread?: boolean; starred?: boolean; attachments?: boolean };
@@ -20,17 +18,8 @@ export type Sort = "newest" | "oldest" | "sender";
 export type Toast = { id: number; text: string; undo?: () => void };
 export type Draft = { id: string; to: Person[]; cc: Person[]; subject: string; body: string; thread?: string; attachments: Message["attachments"]; savedAt?: string };
 export type ComposerState = { open: boolean; mode: "mini" | "full"; minimized: boolean; draft: Draft };
-export type Dialog = null | { kind: "settings"; tab?: string } | { kind: "shortcuts" } | { kind: "auth"; mode: "signin" | "signup" } | { kind: "label" };
+export type Dialog = null | { kind: "settings"; tab?: string } | { kind: "shortcuts" } | { kind: "label" };
 export type ThreadRow = { thread: string; latest: Message; messages: Message[]; unread: boolean; starred: boolean; count: number };
-
-function loadDb(): Db {
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORE) || "null") as Db | null;
-    if (saved?.accounts && saved.accounts[saved.current]) return saved;
-  } catch {}
-  const now = Date.now();
-  return { current: accounts[0].email, accounts: Object.fromEntries(accounts.map(a => [a.email, makeMailbox(a, now)])) };
-}
 
 export const folderMatch = (folder: string, m: Message) => {
   if (folder.startsWith("label:")) return m.labels.includes(folder.slice(6)) && m.folder !== "trash" && m.folder !== "spam" && m.kind === "message";
@@ -50,18 +39,15 @@ async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<v
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => { while (next < items.length) await fn(items[next++]!); }));
 }
 
-const isFuture = (d?: Date): d is Date => !!d && d.getTime() > Date.now();
-
 export const blankDraft = (): Draft => ({ id: newId("d"), to: [], cc: [], subject: "", body: "", attachments: [] });
 
 /** The server-synced fields of a live message, with label names mapped to opaque ids. */
 type Synced = { read: boolean; starred: boolean; folder: Message["folder"]; labels: string[]; snoozedUntil: string | null };
 
-function useMailState(live?: LiveSession) {
-  const [db, setDb] = useState<Db>(() => live
-    ? { current: live.address, accounts: { [live.address]: { messages: [], labels: [], settings: { density: "comfortable", signature: "", notifications: true } } } }
-    : loadDb());
-  const [loading, setLoading] = useState(!!live);
+// Decrypted mail lives only in this state (memory); nothing is written to browser storage.
+function useMailState(live: LiveSession) {
+  const [db, setDb] = useState<Db>(() => ({ current: live.address, accounts: { [live.address]: { messages: [], labels: [], settings: { density: "comfortable", signature: "", notifications: true } } } }));
+  const [loading, setLoading] = useState(true);
   const liveSettings = useRef<{ settings: LiveSettings; version: number } | null>(null);
   const synced = useRef<Map<string, Synced> | null>(null);
   const [folder, setFolderState] = useState<string>("inbox");
@@ -80,13 +66,8 @@ function useMailState(live?: LiveSession) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const toastId = useRef(0);
 
-  // Demo data persists locally; live (decrypted) mail never touches browser storage.
-  useEffect(() => { if (!live) try { localStorage.setItem(STORE, JSON.stringify(db)); } catch {} }, [db, live]);
-
   const box = db.accounts[db.current];
-  const account = live
-    ? { name: live.displayName, email: live.address, initials: initials(live.displayName), role: "Mac Tidar Mail" }
-    : accounts.find(a => a.email === db.current) ?? accounts[0];
+  const account = { name: live.displayName, email: live.address, initials: initials(live.displayName), role: "Mac Tidar Mail" };
 
   const toast = useCallback((text: string, undo?: () => void) => {
     const id = ++toastId.current;
@@ -95,12 +76,11 @@ function useMailState(live?: LiveSession) {
   }, []);
   const dismissToast = (id: number) => setToasts(t => t.filter(x => x.id !== id));
 
-  // ── Live mode: load + decrypt, then mirror every local change to the server ──────────────
+  // ── Load + decrypt, then mirror every local change to the server ──────────────────────────
   const labelIds = () => new Map(liveSettings.current?.settings.labels.map(l => [l.name, l.id]) ?? []);
   const snapshot = (m: Message, ids: Map<string, string>): Synced => ({ read: m.read, starred: m.starred, folder: m.folder, labels: m.labels.map(n => ids.get(n)).filter((x): x is string => !!x).sort(), snoozedUntil: m.snoozedUntil ?? null });
 
   const saveLiveSettings = useCallback(async (next: LiveSettings) => {
-    if (!live) return;
     const prev = liveSettings.current;
     liveSettings.current = { settings: next, version: prev?.version ?? 0 };
     try {
@@ -110,7 +90,6 @@ function useMailState(live?: LiveSession) {
   }, [live, toast]);
 
   useEffect(() => {
-    if (!live) return;
     let cancelled = false;
     (async () => {
       try {
@@ -142,7 +121,7 @@ function useMailState(live?: LiveSession) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!live || loading || !synced.current) return;
+    if (loading || !synced.current) return;
     const ids = labelIds();
     const prev = synced.current, next = new Map<string, Synced>();
     const groups = new Map<string, { set: MessagePatch; sks: string[] }>();
@@ -173,9 +152,9 @@ function useMailState(live?: LiveSession) {
   useEffect(() => { dbRef.current = db; }, [db]);
   const refreshing = useRef(false);
 
-  /** Pull new mail and changes made elsewhere (live mode). Local edits not yet echoed back win. */
+  /** Pull new mail and changes made elsewhere. Local edits not yet echoed back win. */
   const refresh = useCallback(async (manual = false, folders: readonly ("inbox" | "sent" | "archive" | "spam" | "trash")[] = ["inbox", "sent", "archive", "spam", "trash"]) => {
-    if (!live || loading || refreshing.current || !synced.current) return;
+    if (loading || refreshing.current || !synced.current) return;
     refreshing.current = true;
     try {
       const names = new Map(liveSettings.current?.settings.labels.map(l => [l.id, l.name]) ?? []);
@@ -216,13 +195,13 @@ function useMailState(live?: LiveSession) {
 
   // Instant delivery: the server pushes a content-free "new mail" signal; polling stays as a fallback.
   useEffect(() => {
-    if (!live || loading) return;
+    if (loading) return;
     // New mail only ever lands in Inbox or Spam, so a push only needs those two folders.
     return connectPush(live.address, () => void refresh(false, ["inbox", "spam"]));
   }, [live, loading, refresh]);
 
   useEffect(() => {
-    if (!live || loading) return;
+    if (loading) return;
     const tick = () => { if (document.visibilityState === "visible") void refresh(); };
     const timer = setInterval(tick, 30_000);
     window.addEventListener("focus", tick);
@@ -230,15 +209,14 @@ function useMailState(live?: LiveSession) {
     return () => { clearInterval(timer); window.removeEventListener("focus", tick); document.removeEventListener("visibilitychange", tick); };
   }, [live, loading, refresh]);
 
-  /** Fetch and decrypt the bodies of a conversation's messages (live mode). */
+  /** Fetch and decrypt the bodies of a conversation's messages. */
   const loadBodies = async (thread: string) => {
-    if (!live) return;
     const pending = db.accounts[db.current].messages.filter(m => m.thread === thread && m.ref && !m.locked && m.bodyState !== "loaded" && m.bodyState !== "loading");
     if (!pending.length) return;
     const mark = (ids: string[], patch: (m: Message) => Partial<Message>) => setDb(d => ({ ...d, accounts: { ...d.accounts, [d.current]: { ...d.accounts[d.current], messages: d.accounts[d.current].messages.map(m => ids.includes(m.id) ? { ...m, ...patch(m) } : m) } } }));
     mark(pending.map(m => m.id), () => ({ bodyState: "loading" }));
-    // At most 3 downloads at a time: the AWS account runs only 10 Lambdas concurrently in af-south-1.
-    await mapLimit(pending, 3, async m => {
+    // A few downloads at a time keeps the API (and the Lambda concurrency it shares) calm.
+    await mapLimit(pending, 4, async m => {
       try {
         const sender = m.e2e && m.folder !== "sent" ? await mailApi.publicKey(m.from.email).catch(() => null) : null;
         const verificationKeys = sender ? [await readPublicKey(sender.publicKey)] : undefined;
@@ -259,9 +237,9 @@ function useMailState(live?: LiveSession) {
     });
   };
 
-  /** Decrypt an attachment in the browser and hand it to the user as a download (live mode). */
+  /** Decrypt an attachment in the browser and hand it to the user as a download. */
   const downloadAttachment = useCallback(async (m: Message, index: number) => {
-    if (!live || !m.ref) return;
+    if (!m.ref) return;
     const name = m.attachments[index]?.name ?? "attachment";
     // End-to-end mail is never virus-scanned, and outside mail may carry files the scanner missed.
     if (isRiskyFile(name) && !window.confirm(`“${name}” can run code on your computer when opened.\n\nOnly download it if you trust ${m.from.email} and expected this file.`)) return;
@@ -344,34 +322,26 @@ function useMailState(live?: LiveSession) {
     const clean = name.trim();
     if (!clean) return false;
     if (box.labels.some(l => l.name.toLowerCase() === clean.toLowerCase())) { toast("That label already exists"); return false; }
-    if (live && liveSettings.current) void saveLiveSettings({ ...liveSettings.current.settings, labels: [...liveSettings.current.settings.labels, newLiveLabel(clean)] });
+    if (liveSettings.current) void saveLiveSettings({ ...liveSettings.current.settings, labels: [...liveSettings.current.settings.labels, newLiveLabel(clean)] });
     update(b => ({ ...b, labels: [...b.labels, { name: clean, tone: "custom" } satisfies Label] }), "Label created");
     return true;
   };
   const updateSettings = (s: Partial<Settings>) => {
     update(b => ({ ...b, settings: { ...b.settings, ...s } }));
-    if (live && liveSettings.current) void saveLiveSettings({ ...liveSettings.current.settings, ...s });
+    if (liveSettings.current) void saveLiveSettings({ ...liveSettings.current.settings, ...s });
   };
   const emptyTrash = () => update(b => ({ ...b, messages: b.messages.filter(m => m.folder !== "trash") }), "Trash emptied");
-  const resetAccount = () => { setDb(d => ({ ...d, accounts: { ...d.accounts, [d.current]: makeMailbox(account) } })); setView({ kind: "list" }); toast("Demo data reset"); };
-  const switchAccount = (email: string) => {
-    if (live) { toast("Sign out to use a different mailbox"); return; }
-    setDb(d => ({ ...d, current: email })); setFolderState("inbox"); setSelected([]); setView({ kind: "list" }); setQuery(""); setFilters({});
-    toast(`Switched to ${accounts.find(a => a.email === email)?.name}`);
-  };
 
   // Composer: drafts persist into the Drafts folder so nothing typed is lost.
   const compose = (draft?: Partial<Draft>, mode: ComposerState["mode"] = "mini") => setComposer({ open: true, mode, minimized: false, draft: { ...blankDraft(), ...draft } });
   const editDraft = (patch: Partial<Draft>) => setComposer(c => ({ ...c, draft: { ...c.draft, ...patch } }));
   const persistDraft = useCallback((draft: Draft) => {
     const has = draft.to.length || draft.subject.trim() || draft.body.trim();
-    if (live) {
-      if (has) void encryptDraft({ v: 1, to: draft.to, cc: draft.cc, subject: draft.subject, body: draft.body, thread: draft.thread }, live.session).then(blob => mailApi.saveDraft(live.address, draft.id, blob)).catch(() => toast("Couldn’t save your draft"));
-      else void mailApi.deleteDraft(live.address, draft.id).catch(() => {});
-    }
+    if (has) void encryptDraft({ v: 1, to: draft.to, cc: draft.cc, subject: draft.subject, body: draft.body, thread: draft.thread }, live.session).then(blob => mailApi.saveDraft(live.address, draft.id, blob)).catch(() => toast("Couldn’t save your draft"));
+    else void mailApi.deleteDraft(live.address, draft.id).catch(() => {});
     setDb(d => {
       const b = d.accounts[d.current];
-      const me = live ? { name: live.displayName, email: live.address } : accounts.find(a => a.email === d.current)!;
+      const me = { name: live.displayName, email: live.address };
       const others = b.messages.filter(m => m.id !== draft.id);
       if (!has) return { ...d, accounts: { ...d.accounts, [d.current]: { ...b, messages: others } } };
       const msg: Message = { id: draft.id, thread: draft.thread ?? draft.id, kind: "draft", folder: "sent", category: "primary", from: { name: me.name, email: me.email }, to: draft.to, cc: draft.cc,
@@ -382,33 +352,15 @@ function useMailState(live?: LiveSession) {
   const closeComposer = (discard = false) => {
     if (discard) {
       update(b => ({ ...b, messages: b.messages.filter(m => m.id !== composer.draft.id) })); toast("Draft discarded");
-      if (live) void mailApi.deleteDraft(live.address, composer.draft.id).catch(() => {});
+      void mailApi.deleteDraft(live.address, composer.draft.id).catch(() => {});
     }
     else persistDraft(composer.draft);
     setComposer(c => ({ ...c, open: false }));
   };
   const openDraft = (m: Message) => compose({ id: m.id, to: m.to, cc: m.cc ?? [], subject: m.subject, body: m.body, thread: m.thread === m.id ? undefined : m.thread, attachments: m.attachments }, "full");
 
-  /** Validates and sends (or schedules) a draft. Returns an error message when it can't. */
-  async function send(draft: Draft, opts: { scheduleAt?: Date; archive?: boolean } = {}): Promise<string | null> {
-    if (live) return sendLive(draft, opts);
-    if (!draft.to.length) return "Add at least one recipient";
-    if (draft.to.some(p => !/^\S+@\S+\.\S+$/.test(p.email))) return "One of the recipients isn’t a valid email address";
-    if (!draft.subject.trim()) return "Add a subject before sending";
-    const scheduled = isFuture(opts.scheduleAt);
-    const sid = newId("s");
-    const msg: Message = { id: sid, thread: draft.thread ?? sid, kind: scheduled ? "scheduled" : "message", folder: "sent", category: "primary",
-      from: { name: account.name, email: account.email }, to: draft.to, cc: draft.cc, subject: draft.subject.trim(), body: draft.body.trim() || "(No message body)",
-      date: new Date().toISOString(), scheduledAt: scheduled ? opts.scheduleAt!.toISOString() : null, read: true, starred: false, snoozedUntil: null, labels: [], attachments: draft.attachments };
-    update(b => ({ ...b, messages: [msg, ...b.messages.filter(m => m.id !== draft.id).map(m => opts.archive && draft.thread && m.thread === draft.thread ? { ...m, folder: m.folder === "inbox" ? "archive" as const : m.folder } : m)] }),
-      scheduled ? `Scheduled for ${opts.scheduleAt!.toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })}` : opts.archive ? "Sent and archived — demo only" : "Message sent — demo only", true);
-    if (opts.archive && view.kind === "thread") setView({ kind: "list" });
-    return null;
-  }
-
-  async function sendLive(draft: Draft, opts: { scheduleAt?: Date; archive?: boolean }): Promise<string | null> {
-    if (!live) return null;
-    if (isFuture(opts.scheduleAt)) return "Scheduled send isn’t available yet: it would require the server to keep a readable copy, which zero-access encryption doesn’t allow.";
+  /** Validates, encrypts and sends a draft. Returns an error message when it can't. */
+  async function send(draft: Draft, opts: { archive?: boolean } = {}): Promise<string | null> {
     if (!draft.to.length) return "Add at least one recipient";
     if (draft.to.concat(draft.cc).some(p => !/^[^\s@<>",]+@[^\s@<>",]+\.[A-Za-z]{2,}$/.test(p.email))) return "One of the recipients isn’t a valid email address";
     if (!draft.subject.trim()) return "Add a subject before sending";
@@ -438,12 +390,11 @@ function useMailState(live?: LiveSession) {
     }
   }
 
-  // Deliver scheduled mail and wake snoozed threads when they're due.
+  // Wake snoozed threads when they're due.
   useEffect(() => {
     const tick = () => setDb(d => {
       const now = Date.now(); let changed = false;
       const next = Object.fromEntries(Object.entries(d.accounts).map(([k, b]) => [k, { ...b, messages: b.messages.map(m => {
-        if (m.kind === "scheduled" && m.scheduledAt && +new Date(m.scheduledAt) <= now) { changed = true; return { ...m, kind: "message" as const, date: new Date().toISOString(), scheduledAt: null }; }
         if (m.snoozedUntil && +new Date(m.snoozedUntil) <= now) { changed = true; return { ...m, snoozedUntil: null, read: false, date: new Date().toISOString() }; }
         return m;
       }) }]));
@@ -456,7 +407,7 @@ function useMailState(live?: LiveSession) {
     live, loading, loadBodies, downloadAttachment, refresh,
     db, box, account, rows, threadMessages, folder, setFolder, tab, setTab: (t: Category) => { setTab(t); setSelected([]); setPage(0); }, query, setQuery: (q: string) => { setQuery(q); setPage(0); if (q) setView({ kind: "list" }); },
     filters, setFilters, sort, setSort, selected, setSelected, view, openThread, closeThread, page, setPage,
-    move, destroy, markRead, toggleStar, snooze, toggleLabel, createLabel, updateSettings, emptyTrash, resetAccount, switchAccount,
+    move, destroy, markRead, toggleStar, snooze, toggleLabel, createLabel, updateSettings, emptyTrash,
     composer, setComposer, compose, editDraft, persistDraft, closeComposer, openDraft, send,
     palette, setPalette, dialog, setDialog, sidebarOpen, setSidebarOpen, collapsed, setCollapsed, toasts, toast, dismissToast,
   };
@@ -465,7 +416,7 @@ function useMailState(live?: LiveSession) {
 export type MailState = ReturnType<typeof useMailState>;
 const MailContext = createContext<MailState | null>(null);
 
-export function MailProvider({ children, live }: { children: ReactNode; live?: LiveSession }) {
+export function MailProvider({ children, live }: { children: ReactNode; live: LiveSession }) {
   const state = useMailState(live);
   return <MailContext.Provider value={state}>{children}</MailContext.Provider>;
 }

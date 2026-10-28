@@ -1,5 +1,5 @@
 // Public build-time configuration. Live mode is on only when the mail API URL is set;
-// otherwise /app runs the offline demo.
+// otherwise /app shows a "not configured" note.
 export const liveConfig = {
   region: process.env.NEXT_PUBLIC_AWS_REGION ?? "af-south-1",
   userPoolId: process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID ?? "",
