@@ -32,9 +32,18 @@ module "ses" {
   kms_key_arn = module.kms.data_key_arn
 }
 
-module "auth_client" {
-  source       = "./modules/auth_client"
-  user_pool_id = var.cognito_user_pool_id
+module "users" {
+  source            = "./modules/users"
+  region            = var.region
+  account_id        = local.account_id
+  root_domain       = var.root_domain
+  local_domains     = var.receiving_domains
+  ses_identity_arn  = module.ses.identity_arn
+  table_name        = module.table.table_name
+  table_arn         = module.table.table_arn
+  data_key_arn      = module.kms.data_key_arn
+  alerts_topic_arn  = module.monitoring.alerts_topic_arn
+  lambda_source_dir = "${path.root}/../services/mail/dist/auth"
 }
 
 module "monitoring" {
@@ -67,8 +76,9 @@ module "inbound" {
 module "api" {
   source                = "./modules/api"
   region                = var.region
-  user_pool_id          = var.cognito_user_pool_id
-  client_id             = module.auth_client.client_id
+  user_pool_id          = module.users.user_pool_id
+  user_pool_arn         = module.users.user_pool_arn
+  client_id             = module.users.client_id
   app_origins           = var.app_origins
   bucket_name           = module.storage.bucket_name
   bucket_arn            = module.storage.bucket_arn
@@ -102,8 +112,8 @@ module "hosting" {
 module "push" {
   source            = "./modules/push"
   region            = var.region
-  user_pool_id      = var.cognito_user_pool_id
-  client_id         = module.auth_client.client_id
+  user_pool_id      = module.users.user_pool_id
+  client_id         = module.users.client_id
   table_name        = module.table.table_name
   table_arn         = module.table.table_arn
   data_key_arn      = module.kms.data_key_arn

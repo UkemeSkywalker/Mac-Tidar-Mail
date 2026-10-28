@@ -44,13 +44,8 @@ const mb = (address: string) => `/v1/mailboxes/${encodeURIComponent(address)}`;
 export const mailApi = {
   mailboxes: () => call<{ mailboxes: ServerMailbox[] }>("GET", "/v1/mailboxes").then(r => r.mailboxes),
   /** Claim an @mactidar.com address for the signed-in account (one per account). */
-  claim: (localPart: string, displayName: string) => call<{ mailbox: ServerMailbox }>("POST", "/v1/mailboxes", { localPart, displayName }).then(r => r.mailbox),
-  /** No sign-in needed: the account username behind an @mactidar.com address, or null. */
-  async signInName(address: string): Promise<string | null> {
-    const res = await fetch(`${liveConfig.apiUrl}/v1/sign-in-name?address=${encodeURIComponent(address)}`, { cache: "no-store" });
-    if (!res.ok) return null;
-    return ((await res.json()) as { username?: string }).username ?? null;
-  },
+  /** Opens the mailbox for the signed-in account's own address (its username). */
+  claim: () => call<{ mailbox: ServerMailbox }>("POST", "/v1/mailboxes", {}).then(r => r.mailbox),
   saveKeys: (address: string, keyState: MailboxKeyState, expectedVersion: number) => call<{ keyVersion: number }>("PUT", `${mb(address)}/keys`, { keyState, expectedVersion }),
   async listFolder(address: string, folder: ServerFolder): Promise<ServerMessage[]> {
     const out: ServerMessage[] = [];

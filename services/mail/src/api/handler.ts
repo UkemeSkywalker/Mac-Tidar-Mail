@@ -8,14 +8,21 @@ import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCom
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 import { normalizeAddress } from "../crypto/keys";
 import { SESv2Client } from "@aws-sdk/client-sesv2";
+import { AdminGetUserCommand, CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-provider";
 import { draftSk, folderGsi1, mailboxPk, META_SK, ownerGsi1, SETTINGS_SK, type DraftItem, type Folder, type MailboxMeta, type MessageItem, type SettingsItem } from "../shared/table";
 import { Conflict as SendConflict, sendMessage } from "./send";
 import { validateSend } from "./send-validate";
-import { NEW_MAILBOX_DAILY_LIMIT, validateClaim } from "./signup";
+import { displayNameOf, NEW_MAILBOX_DAILY_LIMIT, parseAddress, reservationKey, type Reservation } from "../shared/accounts";
 import { BadRequest, FOLDERS, validateKeyState, validatePatch, validateSettings, validateSks } from "./validate";
 
 export interface ApiConfig { table: string; bucket: string; configurationSet: string; localDomains: string[]; region: string; signupDomain: string }
-export interface ApiDeps { ddb: DynamoDBDocumentClient; s3: S3Client; ses: SESv2Client; config: ApiConfig; presign?: (s3: S3Client, cmd: GetObjectCommand) => Promise<string> }
+/** The parts of a Mail account the API needs (read from the user pool). */
+export interface AccountInfo { sub: string; email: string; emailVerified: boolean; givenName: string; familyName: string }
+export interface ApiDeps {
+  ddb: DynamoDBDocumentClient; s3: S3Client; ses: SESv2Client; config: ApiConfig;
+  account: (username: string) => Promise<AccountInfo | null>;
+  presign?: (s3: S3Client, cmd: GetObjectCommand) => Promise<string>;
+}
 type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
 type Result = APIGatewayProxyStructuredResultV2;
 
@@ -55,7 +62,7 @@ function parseBody(event: Event, maxChars = 600_000): unknown {
   catch { throw new BadRequest("Body must be JSON"); }
 }
 
-export function createHandler({ ddb, s3, ses, config, presign = (c, cmd) => getSignedUrl(c, cmd, { expiresIn: 300 }) }: ApiDeps) {
+export function createHandler({ ddb, s3, ses, config, account, presign = (c, cmd) => getSignedUrl(c, cmd, { expiresIn: 300 }) }: ApiDeps) {
   const T = config.table;
 
   async function ownedMailbox(sub: string, raw: string | undefined): Promise<MailboxMeta> {
@@ -87,27 +94,55 @@ export function createHandler({ ddb, s3, ses, config, presign = (c, cmd) => getS
       }
 
       case "POST /v1/mailboxes": {
-        // One self-claimed address per account. The OWNER#…/CLAIM marker makes that atomic.
-        const { address, displayName } = validateClaim(parseBody(event, 2_000), config.signupDomain);
+        // Opens the mailbox for the signed-in account's own address (its username). One per
+        // account; the OWNER#…/CLAIM marker makes that atomic. A reserved address (for example an
+        // existing mailbox moving to its own login) needs a reservation for this backup email.
+        const username = event.requestContext.authorizer?.jwt?.claims?.username;
+        if (typeof username !== "string") throw new BadRequest("This account has no Mac Tidar address");
+        const { address, reserved } = parseAddress(username, config.signupDomain);
         const { Items = [] } = await ddb.send(new QueryCommand({ TableName: T, IndexName: "gsi1", KeyConditionExpression: "gsi1pk = :o", ExpressionAttributeValues: { ":o": ownerGsi1(sub) }, Limit: 1 }));
         if (Items.length) throw new Conflict("This account already has a mailbox");
+        const acct = await account(username);
+        if (!acct || acct.sub !== sub || !acct.emailVerified) throw new Conflict("Verify your backup email first");
+
+        const [{ Item: res }, { Item: existing }] = await Promise.all([
+          ddb.send(new GetCommand({ TableName: T, Key: reservationKey(address) })),
+          ddb.send(new GetCommand({ TableName: T, Key: { pk: mailboxPk(address), sk: META_SK } })),
+        ]);
+        const reservation = res as Reservation | undefined;
         const now = new Date().toISOString();
-        const meta: MailboxMeta = { pk: mailboxPk(address), sk: META_SK, gsi1pk: ownerGsi1(sub), gsi1sk: mailboxPk(address), address, ownerSub: sub, displayName, status: "active", createdAt: now, createdBy: "self", dailyRecipientLimit: NEW_MAILBOX_DAILY_LIMIT };
+        const claim = { Put: { TableName: T, Item: { pk: `OWNER#${sub}`, sk: "CLAIM", address, createdAt: now }, ConditionExpression: "attribute_not_exists(pk)" } };
+        const meta = existing as MailboxMeta | undefined;
+        let mailbox: MailboxMeta, items: NonNullable<ConstructorParameters<typeof TransactWriteCommand>[0]["TransactItems"]>;
+
+        if (reservation && reservation.backupEmail === acct.email && reservation.expiresAt * 1000 > Date.now()) {
+          const useIt = { Delete: { TableName: T, Key: reservationKey(address), ConditionExpression: "backupEmail = :e", ExpressionAttributeValues: { ":e": acct.email } } };
+          if (meta) {
+            // Move the existing mailbox (mail and keys unchanged) to this account.
+            mailbox = { ...meta, ownerSub: sub, gsi1pk: ownerGsi1(sub) };
+            items = [claim, useIt, { Update: { TableName: T, Key: { pk: meta.pk, sk: META_SK }, UpdateExpression: "SET ownerSub = :s, gsi1pk = :g",
+              ConditionExpression: "ownerSub = :old", ExpressionAttributeValues: { ":s": sub, ":g": ownerGsi1(sub), ":old": meta.ownerSub } } }];
+          } else {
+            mailbox = { pk: mailboxPk(address), sk: META_SK, gsi1pk: ownerGsi1(sub), gsi1sk: mailboxPk(address), address, ownerSub: sub, displayName: displayNameOf(acct), status: "active", createdAt: now, createdBy: "admin" };
+            items = [claim, useIt, { Put: { TableName: T, Item: mailbox, ConditionExpression: "attribute_not_exists(pk)" } }];
+          }
+        } else {
+          if (reserved || reservation) throw new Conflict("That address is reserved");
+          mailbox = { pk: mailboxPk(address), sk: META_SK, gsi1pk: ownerGsi1(sub), gsi1sk: mailboxPk(address), address, ownerSub: sub, displayName: displayNameOf(acct), status: "active", createdAt: now, createdBy: "self", dailyRecipientLimit: NEW_MAILBOX_DAILY_LIMIT };
+          items = [claim, { Put: { TableName: T, Item: mailbox, ConditionExpression: "attribute_not_exists(pk)" } }];
+        }
         try {
-          await ddb.send(new TransactWriteCommand({ TransactItems: [
-            { Put: { TableName: T, Item: { pk: `OWNER#${sub}`, sk: "CLAIM", address, createdAt: now }, ConditionExpression: "attribute_not_exists(pk)" } },
-            { Put: { TableName: T, Item: meta, ConditionExpression: "attribute_not_exists(pk)" } },
-          ] }));
+          await ddb.send(new TransactWriteCommand({ TransactItems: items }));
         } catch (e) {
           if (e instanceof TransactionCanceledException) {
-            const [claim, box] = e.CancellationReasons ?? [];
-            if (claim?.Code === "ConditionalCheckFailed") throw new Conflict("This account already has a mailbox");
-            if (box?.Code === "ConditionalCheckFailed") throw new Conflict("That address is taken. Please choose another.");
+            const [first, ...rest] = e.CancellationReasons ?? [];
+            if (first?.Code === "ConditionalCheckFailed") throw new Conflict("This account already has a mailbox");
+            if (rest.some(r => r?.Code === "ConditionalCheckFailed")) throw new Conflict("That address is taken");
           }
           throw e;
         }
-        console.log(JSON.stringify({ event: "mailbox-claimed" }));
-        return json(201, { mailbox: { address, displayName, keyState: null, keyVersion: 0 } });
+        console.log(JSON.stringify({ event: "mailbox-claimed", moved: !!(reservation && meta) }));
+        return json(201, { mailbox: { address, displayName: mailbox.displayName, keyState: mailbox.keyState ?? null, keyVersion: mailbox.keyVersion ?? 0 } });
       }
 
       case "PUT /v1/mailboxes/{address}/keys": {
@@ -265,26 +300,11 @@ export function createHandler({ ddb, s3, ses, config, presign = (c, cmd) => getS
     }
   }
 
-  /**
-   * Public (no sign-in): lets people sign in with their @mactidar.com address. Returns the
-   * opaque Cognito username of the account that owns it; the account's email is never revealed.
-   */
-  async function signInName(event: Event): Promise<Result> {
-    let address: string;
-    try { address = normalizeAddress(event.queryStringParameters?.address ?? ""); } catch { throw new NotFound(); }
-    if (!config.localDomains.includes(address.split("@")[1] ?? "")) throw new NotFound();
-    const { Item } = await ddb.send(new GetCommand({ TableName: T, Key: { pk: mailboxPk(address), sk: META_SK } }));
-    const meta = Item as MailboxMeta | undefined;
-    if (!meta || meta.status !== "active") throw new NotFound();
-    return json(200, { username: meta.ownerSub });
-  }
-
   return async (event: Event): Promise<Result> => {
     const sub = event.requestContext.authorizer?.jwt?.claims?.sub;
-    const isPublic = event.routeKey === "GET /v1/sign-in-name";
-    if (!isPublic && (typeof sub !== "string" || !sub)) return json(401, { error: "Unauthorized" });
+    if (typeof sub !== "string" || !sub) return json(401, { error: "Unauthorized" });
     try {
-      return isPublic ? await signInName(event) : await route(event, sub as string);
+      return await route(event, sub);
     } catch (e) {
       if (e instanceof BadRequest) return json(400, { error: e.message });
       if (e instanceof NotFound) return json(404, { error: "Not found" });
@@ -301,9 +321,21 @@ function env(name: string): string {
   return v;
 }
 
+async function poolAccount(cognito: CognitoIdentityProviderClient, poolId: string, username: string): Promise<AccountInfo | null> {
+  try {
+    const u = await cognito.send(new AdminGetUserCommand({ UserPoolId: poolId, Username: username }));
+    const attr = (n: string) => u.UserAttributes?.find(a => a.Name === n)?.Value ?? "";
+    return { sub: attr("sub"), email: attr("email").toLowerCase(), emailVerified: attr("email_verified") === "true", givenName: attr("given_name"), familyName: attr("family_name") };
+  } catch (e) {
+    if ((e as Error).name === "UserNotFoundException") return null;
+    throw e;
+  }
+}
+
 let cached: ReturnType<typeof createHandler> | undefined;
 export const handler = (event: Event) => {
   cached ??= createHandler({
+    account: (cognito => (username: string) => poolAccount(cognito, env("MAIL_USER_POOL_ID"), username))(new CognitoIdentityProviderClient({})),
     ddb: DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } }),
     s3: new S3Client({}),
     ses: new SESv2Client({}),

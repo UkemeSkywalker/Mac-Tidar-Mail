@@ -3,6 +3,7 @@
 
 variable "region" { type = string }
 variable "user_pool_id" { type = string }
+variable "user_pool_arn" { type = string }
 variable "client_id" { type = string }
 variable "app_origins" { type = list(string) }
 variable "bucket_name" { type = string }
@@ -40,8 +41,6 @@ locals {
     "PUT /v1/mailboxes/{address}/drafts/{id}",
     "DELETE /v1/mailboxes/{address}/drafts/{id}",
   ]
-  # No sign-in: maps an @mactidar.com address to its account's opaque username for the sign-in form.
-  public_routes = ["GET /v1/sign-in-name"]
 }
 
 data "archive_file" "api" {
@@ -121,6 +120,11 @@ data "aws_iam_policy_document" "api" {
     resources = [var.ws_manage_arn]
   }
   statement {
+    sid       = "ReadMailAccountForMailboxClaim"
+    actions   = ["cognito-idp:AdminGetUser"]
+    resources = [var.user_pool_arn]
+  }
+  statement {
     sid       = "WriteSentCiphertext"
     actions   = ["s3:PutObject"]
     resources = ["${var.bucket_arn}/msg/*", "${var.bucket_arn}/att/*"]
@@ -161,6 +165,7 @@ resource "aws_lambda_function" "api" {
       SES_CONFIGURATION_SET               = var.ses_configuration_set
       LOCAL_MAIL_DOMAINS                  = join(",", var.local_domains)
       SIGNUP_DOMAIN                       = var.signup_domain
+      MAIL_USER_POOL_ID                   = var.user_pool_id
       WS_ENDPOINT                         = var.ws_endpoint
       NODE_OPTIONS                        = "--enable-source-maps"
       AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1"
@@ -210,14 +215,6 @@ resource "aws_apigatewayv2_route" "routes" {
   authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
 }
 
-resource "aws_apigatewayv2_route" "public" {
-  for_each           = toset(local.public_routes)
-  api_id             = aws_apigatewayv2_api.mail.id
-  route_key          = each.value
-  target             = "integrations/${aws_apigatewayv2_integration.api.id}"
-  authorization_type = "NONE"
-}
-
 resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.mail.id
   name        = "$default"
@@ -228,14 +225,11 @@ resource "aws_apigatewayv2_stage" "default" {
     throttling_rate_limit  = 20
   }
 
-  # Sign-up and the public sign-in lookup get much lower limits than the rest of the API.
-  dynamic "route_settings" {
-    for_each = toset(["GET /v1/sign-in-name", "POST /v1/mailboxes"])
-    content {
-      route_key              = route_settings.value
-      throttling_burst_limit = 5
-      throttling_rate_limit  = 2
-    }
+  # Opening a new mailbox gets a much lower limit than the rest of the API.
+  route_settings {
+    route_key              = "POST /v1/mailboxes"
+    throttling_burst_limit = 5
+    throttling_rate_limit  = 2
   }
 
   access_log_settings {
@@ -246,7 +240,7 @@ resource "aws_apigatewayv2_stage" "default" {
     })
   }
   # Route-level throttles need the routes to exist first.
-  depends_on = [aws_apigatewayv2_route.routes, aws_apigatewayv2_route.public]
+  depends_on = [aws_apigatewayv2_route.routes]
 }
 
 resource "aws_lambda_permission" "apigw" {
