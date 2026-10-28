@@ -6,7 +6,7 @@ import { Icon, labelDot } from "./ui";
 
 const mailboxes: [string, string, string][] = [
   ["inbox", "Inbox", "inbox"], ["starred", "Starred", "star"], ["snoozed", "Snoozed", "schedule"], ["sent", "Sent", "send"], ["drafts", "Drafts", "draft"],
-  ["scheduled", "Scheduled", "send_and_archive"], ["archive", "Archive", "archive"], ["spam", "Spam", "report"], ["trash", "Trash", "delete"],
+  ["archive", "Archive", "archive"], ["spam", "Spam", "report"], ["trash", "Trash", "delete"],
 ];
 
 export function Sidebar() {

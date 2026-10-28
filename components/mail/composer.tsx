@@ -1,15 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { accounts, Attachment, directory, Person } from "./data";
+import { Attachment, Person } from "./data";
 import { Draft, useMail } from "./store";
-import { Avatar, Icon, IconButton, MenuItem, Popover } from "./ui";
+import { Avatar, Icon, IconButton } from "./ui";
 
 const asPerson = (raw: string): Person | null => {
   const t = raw.trim().replace(/[,;]$/, "");
   if (!t) return null;
-  const known = [...directory, ...accounts].find(p => p.email.toLowerCase() === t.toLowerCase());
-  return known ? { name: known.name, email: known.email } : { name: t.split("@")[0], email: t };
+  return { name: t.split("@")[0], email: t };
 };
 
 function RecipientField({ label, value, onChange, autoFocus, compact }: { label: string; value: Person[]; onChange: (p: Person[]) => void; autoFocus?: boolean; compact?: boolean }) {
@@ -18,7 +17,8 @@ function RecipientField({ label, value, onChange, autoFocus, compact }: { label:
   const [active, setActive] = useState(0);
   const contacts = useMemo(() => {
     const seen = new Map<string, Person>();
-    [...directory, ...accounts, ...box.messages.map(m => m.from)].forEach(p => { if (!seen.has(p.email)) seen.set(p.email, { name: p.name, email: p.email, title: "title" in p ? p.title : undefined }); });
+    // Suggestions come only from people already in this mailbox (decrypted in memory).
+    box.messages.flatMap(m => [m.from, ...m.to, ...(m.cc ?? [])]).forEach(p => { if (!seen.has(p.email)) seen.set(p.email, { name: p.name, email: p.email }); });
     return [...seen.values()];
   }, [box.messages]);
   const q = text.trim().toLowerCase();
@@ -73,7 +73,6 @@ export function Composer() {
   const { composer, setComposer, editDraft, persistDraft, closeComposer, send, account, box, toast } = useMail();
   const { draft, mode, minimized, open } = composer;
   const [showCc, setShowCc] = useState(draft.cc.length > 0);
-  const [menu, setMenu] = useState(false);
   const [error, setError] = useState("");
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -102,18 +101,16 @@ export function Composer() {
     const added = await Promise.all(ok.map(async f => ({ name: f.name, size: fmtSize(f.size), type: f.type, data: new Uint8Array(await f.arrayBuffer()), icon: f.type.includes("pdf") ? "picture_as_pdf" : f.type.startsWith("image/") ? "image" : "description" } satisfies Attachment)));
     update({ attachments: [...draft.attachments, ...added] });
   };
-  const deliver = async (scheduleAt?: Date) => {
+  const deliver = async () => {
     if (sending) return;
     const sig = box.settings.signature.trim();
     setSending(true);
-    const err = await send({ ...draft, body: sig && !draft.body.includes(sig) ? `${draft.body.trimEnd()}\n\n${sig}` : draft.body }, { scheduleAt });
+    const err = await send({ ...draft, body: sig && !draft.body.includes(sig) ? `${draft.body.trimEnd()}\n\n${sig}` : draft.body });
     setSending(false);
     if (err) { setError(err); return; }
     setComposer(c => ({ ...c, open: false }));
   };
   const format = (cmd: string, arg?: string) => { editor.current?.focus(); document.execCommand(cmd, false, arg); update({ body: editor.current?.innerText ?? draft.body }); };
-  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1); tomorrow.setHours(8, 0, 0, 0);
-  const monday = new Date(); monday.setDate(monday.getDate() + ((8 - monday.getDay()) % 7 || 7)); monday.setHours(8, 0, 0, 0);
   const onKey = (e: React.KeyboardEvent) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); deliver(); } if (e.key === "Escape") { e.stopPropagation(); closeComposer(); } };
   const dropProps = {
     onDragOver: (e: React.DragEvent) => { e.preventDefault(); setDragging(true); },
@@ -226,26 +223,12 @@ export function Composer() {
           {error && <p className="px-space-md pb-1 t-label-md text-m-error" role="alert">{error}</p>}
           <div className="min-h-14 px-space-md py-2 bg-m-mid flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-space-xs">
-              <div className="relative inline-flex rounded-m-lg shadow-xs">
-                <button type="button" onClick={() => deliver()} className="flex items-center gap-space-sm px-space-md py-1.5 bg-m-brand text-m-on-brand hover:bg-m-brand-hover transition-colors t-headline-sm rounded-l-m-lg">
-                  <span>Send</span><kbd className="px-1 py-0.5 rounded-m bg-white/20 t-code">⌘↵</kbd>
-                </button>
-                <button type="button" title="More send options" aria-label="More send options" onClick={() => setMenu(o => !o)} className="px-space-xs py-1.5 bg-m-brand text-m-on-brand hover:bg-m-brand-hover transition-colors border-l border-white/20 rounded-r-m-lg">
-                  <Icon name="arrow_drop_down" className="text-[18px]" />
-                </button>
-                <Popover open={menu} onClose={() => setMenu(false)} className="left-0 bottom-full mb-2 w-56">
-                  <div className="px-3 py-1 t-label-sm text-m-muted uppercase tracking-wider">Schedule send</div>
-                  <MenuItem icon="timer" onClick={() => { setMenu(false); deliver(new Date(Date.now() + 60_000)); }} hint="demo">In 1 minute</MenuItem>
-                  <MenuItem icon="wb_twilight" onClick={() => { setMenu(false); deliver(tomorrow); }}>Tomorrow, 8:00 AM</MenuItem>
-                  <MenuItem icon="next_week" onClick={() => { setMenu(false); deliver(monday); }}>Monday, 8:00 AM</MenuItem>
-                </Popover>
-              </div>
-              <button type="button" onClick={() => deliver(tomorrow)} className="hidden sm:flex items-center gap-1 px-space-sm py-1.5 rounded-m-lg bg-m-card hover:bg-m-high text-m-text transition-colors shadow-xs t-label-md">
-                <Icon name="schedule_send" className="text-[16px] text-m-secondary" /><span>Send tomorrow, 8:00 AM</span>
+              <button type="button" onClick={() => deliver()} className="flex items-center gap-space-sm px-space-md py-1.5 bg-m-brand text-m-on-brand hover:bg-m-brand-hover transition-colors t-headline-sm rounded-m-lg shadow-xs">
+                <span>Send</span><kbd className="px-1 py-0.5 rounded-m bg-white/20 t-code">⌘↵</kbd>
               </button>
             </div>
             <div className="hidden md:flex items-center gap-1.5 text-m-muted t-label-sm">
-              <span className="w-1.5 h-1.5 rounded-full bg-m-success" /><span>{savedAt ? `Draft saved at ${savedAt} (Local persistence)` : "Drafts save automatically"}</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-m-success" /><span>{savedAt ? `Draft saved at ${savedAt} (encrypted)` : "Drafts save automatically"}</span>
             </div>
             <div className="flex items-center gap-1">
               <IconButton icon="attach_file" title="Attach file" onClick={() => fileInput.current?.click()} />

@@ -8,51 +8,6 @@ import { useMail } from "./store";
 import { Avatar, fmtLongDate, newId, Icon, IconButton, LabelChip, MenuItem, Popover, snoozeOptions, UrgentChip } from "./ui";
 
 /** Body from designs/conversation_q3_product_roadmap (Elena’s summary). */
-function Q3RoadmapBody() {
-  const stats = [
-    ["p95 Search Latency", "< 38ms", "text-m-primary", <span key="t" className="t-label-sm text-m-success-text font-medium flex items-center gap-1"><Icon name="trending_down" className="text-[14px]" />62% decrease from Q2</span>],
-    ["Tenant Isolation", "RLS + Schema", "text-m-text", <span key="t" className="t-label-sm text-m-muted font-medium">SOC-2 Type II compliant</span>],
-    ["Offline Draft Sync", "100% Zero-Loss", "text-m-secondary", <span key="t" className="t-label-sm text-m-muted font-medium">IndexedDB + CRDT merge</span>],
-  ] as const;
-  const deliverables: [string, React.ReactNode][] = [
-    ["Multi-tenant workspace isolation:", "Dynamic connection pooling with strict row-level security per organization partition, guaranteeing zero cross-tenant leakage."],
-    ["Instant indexing pipeline:", <>Asynchronous streaming of message bodies directly through pgvector workers, achieving end-to-end searchable availability within <strong>45ms</strong>.</>],
-    ["Offline First Cache:", "Local background thread store on modern web clients using client-side Web Workers, ensuring composition and navigation continue seamlessly in disconnected states."],
-    ["Mac Tidar Suite Unified SSO:", "OIDC integration across all native desktop and mobile touchpoints, complete with automated SAML 2.0 directory sync."],
-  ];
-  return <>
-    <p>Hi Ukeme &amp; Alex,</p>
-    <p>I’ve reviewed the revised technical feasibility study and Alex’s preliminary performance benchmarks. I’m confident we can commit to these Q3 targets ahead of Thursday&apos;s executive sync.</p>
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-space-sm my-space-md">
-      {stats.map(([label, value, tone, note]) => (
-        <div key={label} className="p-space-md rounded-m-xl bg-m-low flex flex-col gap-1">
-          <span className="t-label-sm text-m-muted uppercase tracking-wider font-semibold">{label}</span>
-          <span className={`t-display tracking-tight ${tone}`}>{value}</span>{note}
-        </div>
-      ))}
-    </div>
-    <div className="space-y-3 pt-1">
-      <div className="t-headline-sm text-m-text font-semibold">Primary Architecture Deliverables for Sprint 42–46:</div>
-      <ul className="space-y-2.5 pl-1">
-        {deliverables.map(([title, text]) => <li key={title} className="flex items-start gap-2.5"><Icon name="check_circle" className="text-m-primary text-[18px] mt-1 shrink-0" /><span><strong>{title}</strong> {text}</span></li>)}
-      </ul>
-    </div>
-    <div className="rounded-m-xl bg-m-mid p-space-md space-y-space-sm">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2"><Icon name="hub" className="text-m-secondary text-[20px]" /><span className="t-headline-sm font-semibold">Multi-tenant Vector Ingestion Pipeline</span></div>
-        <span className="px-2 py-0.5 rounded-m-pill t-code font-semibold" style={{ background: "var(--chip-product-bg)", color: "var(--chip-product-fg)" }}>v3.2 Draft</span>
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center pt-1 t-body-sm">
-        {[["Client TLS", "HTTP/3 QUIC"], ["Edge Gateway", "JWT Tenant Routing"], ["Worker Pool", "Rust Vectorizer"], ["pgvector DB", "Isolated Namespaces"]].map(([a, b]) => (
-          <div key={a} className="p-2.5 rounded-m-lg bg-m-card shadow-xs flex flex-col items-center"><span className="font-medium text-m-text">{a}</span><span className="text-m-muted t-label-sm mt-0.5">{b}</span></div>
-        ))}
-      </div>
-    </div>
-    <p>Please check the linked architectural specs and benchmark CSV below. Alex, let’s run the final failover stress test on Staging-US-East this evening.</p>
-    <p className="pt-2 text-m-text font-medium">Best regards,<br /><span className="text-m-muted font-normal">Elena Rostova<br />Vice President of Product Engineering</span></p>
-  </>;
-}
-
 const eml = (m: Message) => [`From: ${m.from.name} <${m.from.email}>`, `To: ${m.to.map(p => `${p.name} <${p.email}>`).join(", ")}`, `Date: ${new Date(m.date).toUTCString()}`, `Subject: ${m.subject}`, "Content-Type: text/plain; charset=utf-8", "", m.body].join("\r\n");
 
 function MessageCard({ m, me, onReply, onReplyAll }: { m: Message; me: string; onReply: () => void; onReplyAll: () => void }) {
@@ -116,7 +71,6 @@ function MessageCard({ m, me, onReply, onReplyAll }: { m: Message; me: string; o
         {m.locked ? <p className="flex items-center gap-2 text-m-muted"><Icon name="lock" className="text-[18px]" />This message is encrypted to an older key. Recover your older keys (Settings → Accounts) to read it.</p>
           : m.bodyState === "loading" ? <p className="flex items-center gap-2 text-m-muted"><span className="w-3.5 h-3.5 rounded-full border-2 border-m-brand border-t-transparent animate-spin" />Decrypting…</p>
           : m.bodyState === "error" ? <p className="text-m-error">Couldn’t decrypt this message.</p>
-          : m.rich === "q3-roadmap" ? <Q3RoadmapBody />
           : m.html ? <SafeHtml html={m.html} inlineImages={m.inlineUrls ?? {}} />
           : m.body.split(/\n{2,}/).map((p, i) => <p key={i} className="whitespace-pre-line break-words">{p}</p>)}
       </div>
@@ -133,9 +87,7 @@ function MessageCard({ m, me, onReply, onReplyAll }: { m: Message; me: string; o
                   <div className="min-w-0"><div className="t-headline-sm text-m-text font-medium truncate">{a.name}</div><div className="t-label-sm text-m-muted">{a.size}{isRiskyFile(a.name) && <span className="text-m-error font-medium"> · can run code</span>}</div></div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  {m.ref
-                    ? <IconButton icon="download" title="Decrypt and download" onClick={() => downloadAttachment(m, i)} />
-                    : <IconButton icon="download" title="Downloads aren’t available in the demo" disabled />}
+                  <IconButton icon="download" title="Decrypt and download" onClick={() => downloadAttachment(m, i)} disabled={!m.ref} />
                 </div>
               </div>
             ))}
@@ -204,7 +156,7 @@ export function ConversationView({ thread }: { thread: string }) {
   };
   const recipients = others(replyAll);
   const draft = () => ({ id: newId("r"), to: recipients, cc: [], subject: `Re: ${subject}`, body: reply + (box.settings.signature ? `\n\n${box.settings.signature}` : ""), thread, attachments: [] });
-  const doSend = async (opts: { archive?: boolean; scheduleAt?: Date } = {}) => {
+  const doSend = async (opts: { archive?: boolean } = {}) => {
     if (!reply.trim()) { setError("Write a reply before sending"); replyRef.current?.focus(); return; }
     if (sending) return;
     setSending(true);
@@ -213,7 +165,6 @@ export function ConversationView({ thread }: { thread: string }) {
     if (err) setError(err); else { setReply(""); setError(""); }
   };
   const startReply = (all: boolean) => { setReplyAll(all); replyRef.current?.focus(); };
-  const tomorrow = snoozeOptions()[1].at;
   const backLabel = folder.startsWith("label:") ? folder.slice(6) : folder[0].toUpperCase() + folder.slice(1);
 
   return (
@@ -326,14 +277,9 @@ export function ConversationView({ thread }: { thread: string }) {
             <div className="flex items-center gap-space-xs">
               <IconButton icon="delete" title="Discard draft" danger onClick={() => { setReply(""); setError(""); if (reply) toast("Reply discarded"); }} />
               <button type="button" onClick={() => doSend({ archive: true })} className="px-2.5 py-1.5 rounded-m-lg text-m-muted hover:text-m-text hover:bg-m-mid t-headline-sm transition-colors">Send &amp; Archive</button>
-              <div className="inline-flex rounded-m-xl bg-m-brand text-m-on-brand shadow-xs overflow-hidden">
-                <button type="button" onClick={() => doSend()} className="flex items-center gap-1.5 px-3.5 py-1.5 hover:bg-m-brand-hover transition-colors t-headline-sm font-medium">
-                  <span>Send</span><kbd className="px-1.5 py-0.5 rounded-m bg-white/20 t-code">⌘↵</kbd>
-                </button>
-                <button type="button" title={`Schedule for ${tomorrow.toLocaleString([], { weekday: "short", hour: "numeric" })}`} onClick={() => doSend({ scheduleAt: tomorrow })} className="px-2 py-1.5 hover:bg-m-brand-hover transition-colors border-l border-white/20">
-                  <Icon name="schedule_send" className="text-[16px]" />
-                </button>
-              </div>
+              <button type="button" onClick={() => doSend()} className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-m-xl bg-m-brand text-m-on-brand shadow-xs hover:bg-m-brand-hover transition-colors t-headline-sm font-medium">
+                <span>Send</span><kbd className="px-1.5 py-0.5 rounded-m bg-white/20 t-code">⌘↵</kbd>
+              </button>
             </div>
           </div>
         </div>
