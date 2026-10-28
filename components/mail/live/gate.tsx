@@ -59,10 +59,10 @@ const errorText = (e: unknown) => {
   return e.message;
 };
 
-// The pool's policy is 8+ with mixed case, a number and a symbol; the app asks for 12 because the
-// password also protects the mailbox key.
-const PASSWORD_RULES = "Use at least 12 characters, with upper- and lower-case letters, a number and a symbol.";
-const strongEnough = (pw: string) => pw.length >= 12 && /[a-z]/.test(pw) && /[A-Z]/.test(pw) && /\d/.test(pw) && /[^A-Za-z0-9]/.test(pw);
+// Matches the pool's policy: 8+ with mixed case, a number and a symbol. The password also locks the
+// mailbox key (Argon2id), which is what slows down guessing.
+const PASSWORD_RULES = "Use at least 8 characters, with upper- and lower-case letters, a number and a symbol.";
+const strongEnough = (pw: string) => pw.length >= 8 && /[a-z]/.test(pw) && /[A-Z]/.test(pw) && /\d/.test(pw) && /[^A-Za-z0-9]/.test(pw);
 const MAIL_DOMAIN = "mactidar.com";
 const isMacTidarAddress = (v: string) => /@(?:[a-z0-9-]+\.)*mactidar\.com$/i.test(v.trim());
 
@@ -379,7 +379,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
             <Field label="Backup email" name="backup" type="email" autoComplete="email" required defaultValue={draft.backup} />
             <p className="t-label-sm text-m-muted mt-1">Your current email (Gmail, Outlook…). Only used to send your sign-up and password-reset codes. You can’t sign in with it.</p>
           </div>
-          <PasswordField label="Password" name="password" autoComplete="new-password" minLength={12} required hint={PASSWORD_RULES} />
+          <PasswordField label="Password" name="password" autoComplete="new-password" minLength={8} required hint={PASSWORD_RULES} />
           <ErrorLine text={stage.error} />
           <Primary type="submit">Create account</Primary>
         </form>
@@ -411,7 +411,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
     case "newPassword":
       return wrap(<Shell title="Choose a new password" subtitle="Your account needs a new password before first use.">
         <form className="space-y-4" onSubmit={e => { const f = form(e); run(async () => { const pw = field(f, "password"); password.current = pw; const r = await confirmSignIn({ challengeResponse: pw }); if (r.nextStep.signInStep !== "DONE") throw new Error("Sign-in incomplete"); await afterSignIn(); }, error => ({ s: "newPassword", error })); }}>
-          <PasswordField label="New password" name="password" autoComplete="new-password" minLength={12} required hint={PASSWORD_RULES} />
+          <PasswordField label="New password" name="password" autoComplete="new-password" minLength={8} required hint={PASSWORD_RULES} />
           <ErrorLine text={stage.error} /><Primary type="submit">Continue</Primary>
         </form>
       </Shell>);
@@ -435,7 +435,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
           await doSignIn(pw);
         }, error => ({ s: "forgotCode", error })); }}>
           <Field label="Code" name="code" inputMode="numeric" autoComplete="one-time-code" required />
-          <PasswordField label="New password" name="password" autoComplete="new-password" minLength={12} required hint={PASSWORD_RULES} />
+          <PasswordField label="New password" name="password" autoComplete="new-password" minLength={8} required hint={PASSWORD_RULES} />
           <ErrorLine text={stage.error} /><Primary type="submit">Reset password</Primary>
         </form>
       </Shell>);
