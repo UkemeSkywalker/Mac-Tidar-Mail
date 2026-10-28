@@ -11,7 +11,7 @@ import {
 } from "../crypto";
 import { Icon } from "../ui";
 import { ApiError, mailApi, type ServerMailbox } from "./api";
-import { configureAuth, confirmResetPassword, confirmSignIn, resetPassword, signIn, signOut } from "./auth";
+import { configureAuth, confirmResetPassword, confirmSignIn, confirmSignUp, resendSignUpCode, resetPassword, signIn, signOut, signUp } from "./auth";
 
 export interface LiveSession {
   address: string;
@@ -37,7 +37,8 @@ export function useLiveSession(): LiveSession {
 type Stage =
   | { s: "signin"; error?: string } | { s: "totp"; error?: string } | { s: "newPassword"; error?: string }
   | { s: "forgot"; error?: string } | { s: "forgotCode"; error?: string } | { s: "working"; label: string }
-  | { s: "noMailbox" } | { s: "pick"; mailboxes: ServerMailbox[] } | { s: "switch"; mailboxes: ServerMailbox[]; error?: string }
+  | { s: "signup"; error?: string } | { s: "confirmSignup"; error?: string; info?: string } | { s: "claim"; error?: string }
+  | { s: "pick"; mailboxes: ServerMailbox[] } | { s: "switch"; mailboxes: ServerMailbox[]; error?: string }
   | { s: "recoveryShow"; code: string; file: string } | { s: "passwordChanged"; error?: string }
   | { s: "ready" } | { s: "locked"; error?: string } | { s: "fatal"; error: string };
 
@@ -45,7 +46,22 @@ function device(): DeviceKeyStore | null {
   try { return createIndexedDbDeviceStore(); } catch { return null; }
 }
 
-const errorText = (e: unknown) => e instanceof Error ? (e.name === "NotAuthorizedException" ? "Incorrect email or password." : e.message) : "Something went wrong.";
+const errorText = (e: unknown) => {
+  if (!(e instanceof Error)) return "Something went wrong.";
+  if (e.name === "NotAuthorizedException" || e.name === "UserNotFoundException") return "Incorrect email or password.";
+  if (e.name === "UsernameExistsException") return "There’s already an account with that email. Sign in instead, or reset your password.";
+  if (e.name === "CodeMismatchException") return "That code isn’t right. Check the latest email and try again.";
+  if (e.name === "ExpiredCodeException") return "That code has expired. Send a new one.";
+  if (e.name === "InvalidPasswordException") return PASSWORD_RULES;
+  return e.message;
+};
+
+// The pool's policy is 8+ with mixed case, a number and a symbol; the app asks for 12 because the
+// password also protects the mailbox key.
+const PASSWORD_RULES = "Use at least 12 characters, with upper- and lower-case letters, a number and a symbol.";
+const strongEnough = (pw: string) => pw.length >= 12 && /[a-z]/.test(pw) && /[A-Z]/.test(pw) && /\d/.test(pw) && /[^A-Za-z0-9]/.test(pw);
+const MAIL_DOMAIN = "mactidar.com";
+const isMacTidarAddress = (v: string) => /@(?:[a-z0-9-]+\.)*mactidar\.com$/i.test(v.trim());
 
 function Shell({ children, title, subtitle }: { children: ReactNode; title: string; subtitle?: string }) {
   return (
@@ -71,6 +87,27 @@ function Field({ label, ...props }: { label: string } & React.InputHTMLAttribute
     </label>
   );
 }
+/** Password input with a show/hide toggle. */
+function PasswordField({ label, hint, ...props }: { label: string; hint?: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+  const [show, setShow] = useState(false);
+  return (
+    <div>
+      <label className="block">
+        <span className="t-label-md text-m-muted">{label}</span>
+        <span className="relative mt-1 block">
+          <input {...props} type={show ? "text" : "password"} autoCapitalize="off" autoCorrect="off" spellCheck={false}
+            className="w-full pl-3 pr-11 py-2.5 rounded-m-lg bg-m-low text-m-text t-body-md border border-m-line focus:outline-none focus:ring-2 focus:ring-m-brand/30" />
+          <button type="button" onClick={() => setShow(v => !v)} aria-label={show ? "Hide password" : "Show password"} aria-pressed={show} title={show ? "Hide password" : "Show password"}
+            className="absolute inset-y-0 right-0 px-3 flex items-center text-m-muted hover:text-m-text focus:outline-none focus-visible:text-m-text">
+            <Icon name={show ? "visibility_off" : "visibility"} className="text-[20px]" />
+          </button>
+        </span>
+      </label>
+      {hint && <p className="t-label-sm text-m-muted mt-1">{hint}</p>}
+    </div>
+  );
+}
+
 const Primary = ({ children, ...p }: React.ButtonHTMLAttributes<HTMLButtonElement>) =>
   <button {...p} className="w-full py-2.5 rounded-m-lg bg-m-brand text-m-on-brand t-headline-sm hover:bg-m-brand-hover disabled:opacity-50">{children}</button>;
 const Link = ({ children, ...p }: React.ButtonHTMLAttributes<HTMLButtonElement>) =>
@@ -81,6 +118,9 @@ export function LiveGate({ children }: { children: ReactNode }) {
   const skin = useSkin();
   const [stage, setStage] = useState<Stage>({ s: "working", label: "Starting…" });
   const [email, setEmail] = useState("");
+  const [fullName, setFullName] = useState("");
+  /** The Cognito username to use for the account behind `email` (resolved from an @mactidar.com address). */
+  const loginName = useRef<string | null>(null);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const password = useRef<string>("");
   const mailbox = useRef<ServerMailbox | null>(null);
@@ -98,7 +138,8 @@ export function LiveGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     configureAuth();
     dev.current = device();
-    signOut().catch(() => {}).finally(() => setStage({ s: "signin" }));
+    const signup = new URLSearchParams(location.search).get("mode") === "signup";
+    signOut().catch(() => {}).finally(() => setStage({ s: signup ? "signup" : "signin" }));
   }, []);
 
   const saveKeys = async (state: MailboxKeyState) => {
@@ -147,21 +188,41 @@ export function LiveGate({ children }: { children: ReactNode }) {
     const chosen = list.find(m => m.address === target.current);
     target.current = null;
     if (chosen) return openMailbox(chosen);
-    if (!list.length) return setStage({ s: "noMailbox" });
+    if (!list.length) return setStage({ s: "claim" });
     if (list.length > 1) return setStage({ s: "pick", mailboxes: list });
     await openMailbox(list[0]!);
   }
 
   const run = (fn: () => Promise<void>, back: (error: string) => Stage) => fn().catch(e => setStage(back(e instanceof ApiError || e instanceof Error ? errorText(e) : "Something went wrong.")));
 
+  /**
+   * Who to sign in as. An @mactidar.com address signs in to the account that owns it (whose
+   * email is the backup address); anything else is the account email itself.
+   */
+  async function loginNames(input: string): Promise<string[]> {
+    const id = input.trim().toLowerCase();
+    if (!isMacTidarAddress(id)) return [id];
+    const owner = await mailApi.signInName(id).catch(() => null);
+    return owner ? [owner, id] : [id];
+  }
+
   async function doSignIn(pw: string) {
     password.current = pw;
     setStage({ s: "working", label: "Signing in…" });
-    const res = await signIn({ username: email.trim().toLowerCase(), password: pw });
-    const step = res.nextStep.signInStep;
+    let res: Awaited<ReturnType<typeof signIn>> | undefined;
+    const names = await loginNames(email);
+    for (const [i, username] of names.entries()) {
+      try { res = await signIn({ username, password: pw }); loginName.current = username; break; }
+      catch (e) { if (i === names.length - 1 || !(e instanceof Error) || !["NotAuthorizedException", "UserNotFoundException"].includes(e.name)) throw e; }
+    }
+    const step = res!.nextStep.signInStep;
     if (step === "DONE") return afterSignIn();
     if (step === "CONFIRM_SIGN_IN_WITH_TOTP_CODE") return setStage({ s: "totp" });
     if (step === "CONFIRM_SIGN_IN_WITH_NEW_PASSWORD_REQUIRED") return setStage({ s: "newPassword" });
+    if (step === "CONFIRM_SIGN_UP") {
+      await resendSignUpCode({ username: loginName.current! });
+      return setStage({ s: "confirmSignup", info: "Your account isn’t verified yet. We’ve sent a new code to your backup email." });
+    }
     if (step === "RESET_PASSWORD") return setStage({ s: "forgot", error: "Your password must be reset before you can sign in." });
     throw new Error("This account needs to finish setup in Mac Tidar Cloud first.");
   }
@@ -216,14 +277,74 @@ export function LiveGate({ children }: { children: ReactNode }) {
     case "working":
       return wrap(<div className="min-h-dvh grid place-items-center bg-m-canvas text-m-muted"><div className="flex items-center gap-3 t-body-md"><span className="w-4 h-4 rounded-full border-2 border-m-brand border-t-transparent animate-spin" />{stage.label}</div></div>);
     case "signin":
-      return wrap(<Shell title="Sign in" subtitle="Use your Mac Tidar account.">
+      return wrap(<Shell title="Sign in" subtitle="Use your @mactidar.com address or your account email.">
         <form className="space-y-4" onSubmit={e => { const f = form(e); run(() => doSignIn(field(f, "password")), error => ({ s: "signin", error })); }}>
           <Field label="Email" name="email" type="email" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)} />
-          <Field label="Password" name="password" type="password" autoComplete="current-password" required />
+          <PasswordField label="Password" name="password" autoComplete="current-password" required />
           <ErrorLine text={stage.error} />
           <Primary type="submit">Sign in</Primary>
         </form>
         <div className="flex justify-between"><Link onClick={() => setStage({ s: "forgot" })}>Forgot password?</Link><NextLink href="/" className="t-label-md text-m-muted hover:underline">Back to home</NextLink></div>
+        <p className="t-body-sm text-m-muted text-center pt-2 border-t border-m-line">New to Mac Tidar Mail? <Link onClick={() => setStage({ s: "signup" })}>Create an account</Link></p>
+      </Shell>);
+    case "signup":
+      return wrap(<Shell title="Create your account" subtitle="Next you’ll choose your @mactidar.com address.">
+        <form className="space-y-4" onSubmit={e => { const f = form(e); run(async () => {
+          const backup = field(f, "email").trim().toLowerCase(), pw = field(f, "password"), name = field(f, "name").trim();
+          if (isMacTidarAddress(backup)) throw new Error("Use an email outside Mac Tidar (Gmail, Outlook…), so you can always reset your password.");
+          if (!strongEnough(pw)) throw new Error(PASSWORD_RULES);
+          setEmail(backup); setFullName(name); password.current = pw; loginName.current = backup;
+          setStage({ s: "working", label: "Creating your account…" });
+          const r = await signUp({ username: backup, password: pw, options: { userAttributes: { email: backup, name } } });
+          if (r.nextStep.signUpStep === "DONE") return doSignIn(pw);
+          setStage({ s: "confirmSignup" });
+        }, error => ({ s: "signup", error })); }}>
+          <Field label="Your name" name="name" autoComplete="name" required maxLength={64} defaultValue={fullName} />
+          <div>
+            <Field label="Backup email" name="email" type="email" autoComplete="email" required defaultValue={email} />
+            <p className="t-label-sm text-m-muted mt-1">Your current email (Gmail, Outlook…). We send sign-up and password-reset codes here.</p>
+          </div>
+          <PasswordField label="Password" name="password" autoComplete="new-password" minLength={12} required hint={PASSWORD_RULES} />
+          <ErrorLine text={stage.error} />
+          <Primary type="submit">Continue</Primary>
+        </form>
+        <p className="t-body-sm text-m-muted">Your password also locks your mailbox key. Mac Tidar never sees it and can’t read your mail.</p>
+        <p className="t-body-sm text-m-muted text-center pt-2 border-t border-m-line">Already have an account? <Link onClick={() => setStage({ s: "signin" })}>Sign in</Link></p>
+      </Shell>);
+    case "confirmSignup":
+      return wrap(<Shell title="Check your email" subtitle={stage.info ?? `We sent a 6-digit code to ${email}. It can take a minute to arrive.`}>
+        <form className="space-y-4" onSubmit={e => { const f = form(e); run(async () => {
+          await confirmSignUp({ username: loginName.current ?? email.trim().toLowerCase(), confirmationCode: field(f, "code").trim() });
+          await doSignIn(password.current);
+        }, error => ({ s: "confirmSignup", error })); }}>
+          <Field label="Code" name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" required autoFocus />
+          <ErrorLine text={stage.error} /><Primary type="submit">Verify</Primary>
+        </form>
+        <div className="flex justify-between">
+          <Link onClick={() => run(async () => { await resendSignUpCode({ username: loginName.current ?? email.trim().toLowerCase() }); setStage({ s: "confirmSignup", info: `New code sent to ${email}.` }); }, error => ({ s: "confirmSignup", error }))}>Send a new code</Link>
+          <Link onClick={() => setStage({ s: "signup" })}>Change email</Link>
+        </div>
+      </Shell>);
+    case "claim":
+      return wrap(<Shell title="Choose your address" subtitle="This is your new email address. It can’t be changed later.">
+        <form className="space-y-4" onSubmit={e => { const f = form(e); run(async () => {
+          const mb = await mailApi.claim(field(f, "local").trim().toLowerCase(), field(f, "name").trim());
+          boxes.current = [mb];
+          await openMailbox(mb);
+        }, error => ({ s: "claim", error })); }}>
+          <label className="block">
+            <span className="t-label-md text-m-muted">Address</span>
+            <span className="mt-1 flex items-stretch rounded-m-lg border border-m-line bg-m-low focus-within:ring-2 focus-within:ring-m-brand/30 overflow-hidden">
+              <input name="local" required minLength={3} maxLength={30} pattern="[A-Za-z0-9]([A-Za-z0-9]|[._\-](?=[A-Za-z0-9])){2,29}" autoCapitalize="off" autoCorrect="off" spellCheck={false} autoFocus
+                className="flex-1 min-w-0 px-3 py-2.5 bg-transparent text-m-text t-body-md focus:outline-none" />
+              <span className="px-3 flex items-center t-body-md text-m-muted bg-m-mid">@{MAIL_DOMAIN}</span>
+            </span>
+            <span className="t-label-sm text-m-muted mt-1 block">3–30 letters or numbers; dots, dashes and underscores allowed between them.</span>
+          </label>
+          <Field label="Name people see" name="name" autoComplete="name" required maxLength={64} defaultValue={fullName} />
+          <ErrorLine text={stage.error} /><Primary type="submit">Create my mailbox</Primary>
+        </form>
+        <Link onClick={doSignOut}>Sign out</Link>
       </Shell>);
     case "totp":
       return wrap(<Shell title="Two-step verification" subtitle="Enter the 6-digit code from your authenticator app.">
@@ -235,33 +356,34 @@ export function LiveGate({ children }: { children: ReactNode }) {
     case "newPassword":
       return wrap(<Shell title="Choose a new password" subtitle="Your account needs a new password before first use.">
         <form className="space-y-4" onSubmit={e => { const f = form(e); run(async () => { const pw = field(f, "password"); password.current = pw; const r = await confirmSignIn({ challengeResponse: pw }); if (r.nextStep.signInStep !== "DONE") throw new Error("Sign-in incomplete"); await afterSignIn(); }, error => ({ s: "newPassword", error })); }}>
-          <Field label="New password" name="password" type="password" autoComplete="new-password" minLength={12} required />
+          <PasswordField label="New password" name="password" autoComplete="new-password" minLength={12} required hint={PASSWORD_RULES} />
           <ErrorLine text={stage.error} /><Primary type="submit">Continue</Primary>
         </form>
       </Shell>);
     case "forgot":
-      return wrap(<Shell title="Reset your password" subtitle="We’ll email a code to your Mac Tidar account address.">
-        <form className="space-y-4" onSubmit={e => { form(e); run(async () => { await resetPassword({ username: email.trim().toLowerCase() }); setStage({ s: "forgotCode" }); }, error => ({ s: "forgot", error })); }}>
+      return wrap(<Shell title="Reset your password" subtitle="Enter your @mactidar.com address or account email. We’ll send a code to your backup email.">
+        <form className="space-y-4" onSubmit={e => { form(e); run(async () => {
+          loginName.current = (await loginNames(email))[0]!;
+          await resetPassword({ username: loginName.current });
+          setStage({ s: "forgotCode" });
+        }, error => ({ s: "forgot", error })); }}>
           <Field label="Email" name="email" type="email" required value={email} onChange={e => setEmail(e.target.value)} />
           <ErrorLine text={stage.error} /><Primary type="submit">Send code</Primary>
         </form>
         <Link onClick={() => setStage({ s: "signin" })}>Back to sign in</Link>
       </Shell>);
     case "forgotCode":
-      return wrap(<Shell title="Enter the code" subtitle="Check your email for a 6-digit code, then choose a new password. Your mail is never lost: new mail works straight away, and older mail can be recovered.">
+      return wrap(<Shell title="Enter the code" subtitle="Check your backup email for a 6-digit code, then choose a new password. Your mail is never lost: new mail works straight away, and older mail can be recovered.">
         <form className="space-y-4" onSubmit={e => { const f = form(e); run(async () => {
           const pw = field(f, "password");
-          await confirmResetPassword({ username: email.trim().toLowerCase(), confirmationCode: field(f, "code").trim(), newPassword: pw });
+          if (!strongEnough(pw)) throw new Error(PASSWORD_RULES);
+          await confirmResetPassword({ username: loginName.current ?? email.trim().toLowerCase(), confirmationCode: field(f, "code").trim(), newPassword: pw });
           await doSignIn(pw);
         }, error => ({ s: "forgotCode", error })); }}>
           <Field label="Code" name="code" inputMode="numeric" autoComplete="one-time-code" required />
-          <Field label="New password" name="password" type="password" autoComplete="new-password" minLength={12} required />
+          <PasswordField label="New password" name="password" autoComplete="new-password" minLength={12} required hint={PASSWORD_RULES} />
           <ErrorLine text={stage.error} /><Primary type="submit">Reset password</Primary>
         </form>
-      </Shell>);
-    case "noMailbox":
-      return wrap(<Shell title="No mailbox yet" subtitle="Your Mac Tidar account doesn’t have an @mactidar.com mailbox. Mailboxes are created by an administrator during the beta.">
-        <Primary onClick={doSignOut}>Sign out</Primary>
       </Shell>);
     case "pick":
       return wrap(<Shell title="Choose a mailbox">
@@ -281,7 +403,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
               <span><b className="block t-headline-sm text-m-text">{m.displayName}</b><span className="t-body-sm text-m-muted">{m.address}</span></span>
             </label>)}
           </div>
-          <Field label="Password" name="password" type="password" autoComplete="current-password" required autoFocus />
+          <PasswordField label="Password" name="password" autoComplete="current-password" required autoFocus />
           <ErrorLine text={stage.error} /><Primary type="submit">Open mailbox</Primary>
         </form>
         <Link onClick={doSignOut}>Sign out instead</Link>
@@ -300,7 +422,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
           await saveKeys(restoredState);
           finishUnlock(s);
         }, error => ({ s: "passwordChanged", error })); }}>
-          <Field label="Previous password" name="old" type="password" autoComplete="off" required />
+          <PasswordField label="Previous password" name="old" autoComplete="off" required />
           <Primary type="submit">Unlock with previous password</Primary>
         </form>
         <div className="t-label-md text-m-muted text-center">or</div>
@@ -323,7 +445,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
             finishUnlock(s);
           } catch (e) { if (e instanceof WrongPasswordError) throw new Error("Incorrect password."); throw e; }
         }, error => ({ s: "locked", error })); }}>
-          <Field label="Password" name="password" type="password" autoComplete="current-password" required autoFocus />
+          <PasswordField label="Password" name="password" autoComplete="current-password" required autoFocus />
           <ErrorLine text={stage.error} /><Primary type="submit">Unlock</Primary>
         </form>
         <Link onClick={doSignOut}>Sign out instead</Link>
@@ -371,7 +493,7 @@ function RecoveryDialog({ onClose, recover }: { onClose: () => void; recover: (i
         {kind === "recovery" ? <>
           <textarea value={value} onChange={e => setValue(e.target.value)} rows={4} placeholder="Paste your recovery code, or choose the file below" className="w-full p-3 rounded-m-lg bg-m-low text-m-text t-body-sm font-mono border border-m-line focus:outline-none" />
           <input type="file" accept=".txt,text/plain" onChange={async e => { const f = e.target.files?.[0]; if (f && f.size < 20_000) setValue(await f.text()); }} className="t-body-sm text-m-muted" />
-        </> : <input type="password" value={value} onChange={e => setValue(e.target.value)} placeholder="Previous password" className="w-full px-3 py-2.5 rounded-m-lg bg-m-low text-m-text t-body-md border border-m-line" />}
+        </> : <PasswordField label="Previous password" value={value} onChange={e => setValue(e.target.value)} autoComplete="off" />}
         {error && <p role="alert" className="t-label-md text-m-error">{error}</p>}
         <Primary disabled={!value || busy} onClick={async () => {
           setBusy(true); setError("");

@@ -43,15 +43,16 @@ export async function sendMessage(deps: SendDeps, sender: MailboxMeta, req: Send
   try {
     // 2. Daily per-mailbox recipient cap (abuse protection for the shared sending reputation).
     const recipients = new Set([...req.to, ...req.cc, ...req.bcc]).size;
+    const limit = sender.dailyRecipientLimit ?? DAILY_RECIPIENT_LIMIT;
     try {
       await ddb.send(new UpdateCommand({
         TableName: table, Key: { pk: sender.pk, sk: `QUOTA#${today()}` },
         UpdateExpression: "ADD recipients :n SET expiresAt = :exp",
         ConditionExpression: "attribute_not_exists(recipients) OR recipients <= :max",
-        ExpressionAttributeValues: { ":n": recipients, ":max": DAILY_RECIPIENT_LIMIT - recipients, ":exp": inDays(3) },
+        ExpressionAttributeValues: { ":n": recipients, ":max": limit - recipients, ":exp": inDays(3) },
       }));
     } catch (e) {
-      if (e instanceof ConditionalCheckFailedException) throw new BadRequest(`Daily sending limit reached (${DAILY_RECIPIENT_LIMIT} recipients per day)`);
+      if (e instanceof ConditionalCheckFailedException) throw new BadRequest(`Daily sending limit reached (${limit} recipients per day)`);
       throw e;
     }
 

@@ -83,6 +83,7 @@ module "api" {
   ses_identity_arn      = module.ses.identity_arn
   ses_configuration_set = module.ses.configuration_set_name
   ses_events_topic_arn  = module.ses.ses_events_topic_arn
+  signup_domain         = var.root_domain
   ws_endpoint           = module.push.management_endpoint
   ws_manage_arn         = module.push.manage_connections_arn
 }

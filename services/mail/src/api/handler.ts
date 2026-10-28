@@ -3,17 +3,18 @@
 // checks the caller owns it, and answers 404 otherwise so addresses can't be probed.
 import { DeleteObjectsCommand, GetObjectCommand, ListObjectVersionsCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { ConditionalCheckFailedException, DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { ConditionalCheckFailedException, DynamoDBClient, TransactionCanceledException } from "@aws-sdk/client-dynamodb";
+import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, TransactWriteCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 import { normalizeAddress } from "../crypto/keys";
 import { SESv2Client } from "@aws-sdk/client-sesv2";
 import { draftSk, folderGsi1, mailboxPk, META_SK, ownerGsi1, SETTINGS_SK, type DraftItem, type Folder, type MailboxMeta, type MessageItem, type SettingsItem } from "../shared/table";
 import { Conflict as SendConflict, sendMessage } from "./send";
 import { validateSend } from "./send-validate";
+import { NEW_MAILBOX_DAILY_LIMIT, validateClaim } from "./signup";
 import { BadRequest, FOLDERS, validateKeyState, validatePatch, validateSettings, validateSks } from "./validate";
 
-export interface ApiConfig { table: string; bucket: string; configurationSet: string; localDomains: string[]; region: string }
+export interface ApiConfig { table: string; bucket: string; configurationSet: string; localDomains: string[]; region: string; signupDomain: string }
 export interface ApiDeps { ddb: DynamoDBDocumentClient; s3: S3Client; ses: SESv2Client; config: ApiConfig; presign?: (s3: S3Client, cmd: GetObjectCommand) => Promise<string> }
 type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
 type Result = APIGatewayProxyStructuredResultV2;
@@ -83,6 +84,30 @@ export function createHandler({ ddb, s3, ses, config, presign = (c, cmd) => getS
         const mailboxes = (Items as MailboxMeta[]).filter(m => m.status === "active" && m.ownerSub === sub)
           .map(m => ({ address: m.address, displayName: m.displayName, keyState: m.keyState ?? null, keyVersion: m.keyVersion ?? 0 }));
         return json(200, { mailboxes });
+      }
+
+      case "POST /v1/mailboxes": {
+        // One self-claimed address per account. The OWNER#…/CLAIM marker makes that atomic.
+        const { address, displayName } = validateClaim(parseBody(event, 2_000), config.signupDomain);
+        const { Items = [] } = await ddb.send(new QueryCommand({ TableName: T, IndexName: "gsi1", KeyConditionExpression: "gsi1pk = :o", ExpressionAttributeValues: { ":o": ownerGsi1(sub) }, Limit: 1 }));
+        if (Items.length) throw new Conflict("This account already has a mailbox");
+        const now = new Date().toISOString();
+        const meta: MailboxMeta = { pk: mailboxPk(address), sk: META_SK, gsi1pk: ownerGsi1(sub), gsi1sk: mailboxPk(address), address, ownerSub: sub, displayName, status: "active", createdAt: now, createdBy: "self", dailyRecipientLimit: NEW_MAILBOX_DAILY_LIMIT };
+        try {
+          await ddb.send(new TransactWriteCommand({ TransactItems: [
+            { Put: { TableName: T, Item: { pk: `OWNER#${sub}`, sk: "CLAIM", address, createdAt: now }, ConditionExpression: "attribute_not_exists(pk)" } },
+            { Put: { TableName: T, Item: meta, ConditionExpression: "attribute_not_exists(pk)" } },
+          ] }));
+        } catch (e) {
+          if (e instanceof TransactionCanceledException) {
+            const [claim, box] = e.CancellationReasons ?? [];
+            if (claim?.Code === "ConditionalCheckFailed") throw new Conflict("This account already has a mailbox");
+            if (box?.Code === "ConditionalCheckFailed") throw new Conflict("That address is taken. Please choose another.");
+          }
+          throw e;
+        }
+        console.log(JSON.stringify({ event: "mailbox-claimed" }));
+        return json(201, { mailbox: { address, displayName, keyState: null, keyVersion: 0 } });
       }
 
       case "PUT /v1/mailboxes/{address}/keys": {
@@ -240,11 +265,26 @@ export function createHandler({ ddb, s3, ses, config, presign = (c, cmd) => getS
     }
   }
 
+  /**
+   * Public (no sign-in): lets people sign in with their @mactidar.com address. Returns the
+   * opaque Cognito username of the account that owns it; the account's email is never revealed.
+   */
+  async function signInName(event: Event): Promise<Result> {
+    let address: string;
+    try { address = normalizeAddress(event.queryStringParameters?.address ?? ""); } catch { throw new NotFound(); }
+    if (!config.localDomains.includes(address.split("@")[1] ?? "")) throw new NotFound();
+    const { Item } = await ddb.send(new GetCommand({ TableName: T, Key: { pk: mailboxPk(address), sk: META_SK } }));
+    const meta = Item as MailboxMeta | undefined;
+    if (!meta || meta.status !== "active") throw new NotFound();
+    return json(200, { username: meta.ownerSub });
+  }
+
   return async (event: Event): Promise<Result> => {
     const sub = event.requestContext.authorizer?.jwt?.claims?.sub;
-    if (typeof sub !== "string" || !sub) return json(401, { error: "Unauthorized" });
+    const isPublic = event.routeKey === "GET /v1/sign-in-name";
+    if (!isPublic && (typeof sub !== "string" || !sub)) return json(401, { error: "Unauthorized" });
     try {
-      return await route(event, sub);
+      return isPublic ? await signInName(event) : await route(event, sub as string);
     } catch (e) {
       if (e instanceof BadRequest) return json(400, { error: e.message });
       if (e instanceof NotFound) return json(404, { error: "Not found" });
@@ -270,6 +310,7 @@ export const handler = (event: Event) => {
     config: {
       table: env("MAIL_TABLE"), bucket: env("MAIL_BUCKET"), configurationSet: env("SES_CONFIGURATION_SET"), region: env("AWS_REGION"),
       localDomains: env("LOCAL_MAIL_DOMAINS").split(",").map(d => d.trim().toLowerCase()),
+      signupDomain: env("SIGNUP_DOMAIN").trim().toLowerCase(),
     },
   });
   return cached(event);
