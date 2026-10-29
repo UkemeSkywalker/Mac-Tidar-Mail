@@ -174,6 +174,11 @@ export class MailboxSession {
     return decryptAttachment(ciphertext, { decryptionKeys: this.decryptionKeys(), ...opts });
   }
 
+  /** Let this browser reopen the mailbox after a reload, without the password. */
+  async rememberSession(device: DeviceKeyStore): Promise<void> {
+    await device.saveSession(this.address, this.#unlocked().passphrase);
+  }
+
   /** Keep a device-wrapped copy of every unlocked key in this browser. */
   async rememberOnDevice(device: DeviceKeyStore): Promise<void> {
     await device.saveKeys(this.address, this.decryptionKeys());
@@ -338,7 +343,41 @@ export async function unlockMailbox(
   password: string,
   options: KeyringOptions = {},
 ): Promise<{ session: MailboxSession } & RestoreResult> {
-  const passphrase = await deriveKeyPassphrase(password, state.address);
+  return unlockWithPassphrase(state, await deriveKeyPassphrase(password, state.address), options);
+}
+
+/** No remembered session on this device, or it no longer opens the mailbox (password changed). */
+export class NoDeviceSessionError extends Error {
+  constructor() { super("This device has no session for the mailbox"); this.name = "NoDeviceSessionError"; }
+}
+
+/**
+ * After a reload: reopen the mailbox with the passphrase this browser remembered at sign-in.
+ * Throws NoDeviceSessionError when the password is needed instead.
+ */
+export async function resumeMailbox(
+  state: MailboxKeyState,
+  device: DeviceKeyStore,
+  options: Omit<KeyringOptions, "device"> = {},
+): Promise<{ session: MailboxSession } & RestoreResult> {
+  const passphrase = await device.loadSession(state.address);
+  if (!passphrase) throw new NoDeviceSessionError();
+  try {
+    return await unlockWithPassphrase(state, passphrase, { ...options, device });
+  } catch (e) {
+    if (e instanceof WrongPasswordError) {
+      await device.forgetSession(state.address);
+      throw new NoDeviceSessionError();
+    }
+    throw e;
+  }
+}
+
+async function unlockWithPassphrase(
+  state: MailboxKeyState,
+  passphrase: string,
+  options: KeyringOptions,
+): Promise<{ session: MailboxSession } & RestoreResult> {
   const primary = state.keys.find((k) => k.fingerprint === state.primaryFingerprint);
   if (!primary || primary.status !== "active") throw new Error("Mailbox key state has no active primary key");
   let primaryKey: PrivateKey;

@@ -16,6 +16,16 @@ export interface DeviceKeyStore {
   /** Remember which recovery key this device trusts, so new keys can be backed up to it after a reset. */
   pinRecoveryFingerprint(address: string, fingerprint: string): Promise<void>;
   getRecoveryFingerprint(address: string): Promise<string | null>;
+  /**
+   * Keeps the key passphrase (derived from the password, never the password itself) wrapped
+   * the same way as the keys, so a reload can reopen the mailbox without asking again.
+   * Gives no more access than the wrapped keys this store already holds.
+   */
+  saveSession(address: string, passphrase: string): Promise<void>;
+  /** The remembered passphrase, or null if there is none (or it can't be unwrapped). */
+  loadSession(address: string): Promise<string | null>;
+  /** Drops the remembered passphrase (sign out); key copies for recovery stay. */
+  forgetSession(address: string): Promise<void>;
   /** Removes everything for this mailbox (use on "sign out and forget this device"). */
   forget(address: string): Promise<void>;
 }
@@ -31,10 +41,16 @@ export interface DeviceRecord {
   wrappingKey: CryptoKey;
   keys: Record<string, WrappedKey>;
   recoveryFingerprint?: string;
+  /** Wrapped key passphrase for reopening after a reload; removed on sign-out. */
+  session?: WrappedKey;
 }
 
 function aad(address: string, fingerprint: string): Uint8Array<ArrayBuffer> {
   return new TextEncoder().encode(`mactidar-mail/device-key/v1\0${address}\0${fingerprint}`);
+}
+
+function sessionAad(address: string): Uint8Array<ArrayBuffer> {
+  return new TextEncoder().encode(`mactidar-mail/device-session/v1\0${address}`);
 }
 
 function request<T>(req: IDBRequest<T>): Promise<T> {
@@ -133,6 +149,38 @@ export function createIndexedDbDeviceStore(options: { indexedDB?: IDBFactory; db
 
     async getRecoveryFingerprint(rawAddress) {
       return (await get(normalizeAddress(rawAddress)))?.recoveryFingerprint ?? null;
+    },
+
+    async saveSession(rawAddress, passphrase) {
+      const address = normalizeAddress(rawAddress);
+      const record = await getOrCreate(address);
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const plain = new TextEncoder().encode(passphrase);
+      const data = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: sessionAad(address) }, record.wrappingKey, plain));
+      plain.fill(0);
+      record.session = { iv, data };
+      await put(record);
+    },
+
+    async loadSession(rawAddress) {
+      const address = normalizeAddress(rawAddress);
+      const record = await get(address);
+      const wrapped = record?.session;
+      if (!record || !wrapped) return null;
+      try {
+        const plain = await crypto.subtle.decrypt(
+          { name: "AES-GCM", iv: new Uint8Array(wrapped.iv), additionalData: sessionAad(address) }, record.wrappingKey, new Uint8Array(wrapped.data));
+        return new TextDecoder().decode(plain);
+      } catch {
+        return null; // tampered or corrupt: fall back to the password
+      }
+    },
+
+    async forgetSession(rawAddress) {
+      const record = await get(normalizeAddress(rawAddress));
+      if (!record?.session) return;
+      delete record.session;
+      await put(record);
     },
 
     async forget(rawAddress) {

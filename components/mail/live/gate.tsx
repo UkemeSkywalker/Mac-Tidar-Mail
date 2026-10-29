@@ -6,13 +6,13 @@ import NextLink from "next/link";
 import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { useSkin } from "../../skin-store";
 import {
-  createIndexedDbDeviceStore, InvalidRecoveryCodeError, lockedKeyCount, resetMailboxKeys, setupMailboxKeys, startAutoLock, unlockMailbox, WrongPasswordError,
+  createIndexedDbDeviceStore, InvalidRecoveryCodeError, lockedKeyCount, NoDeviceSessionError, resetMailboxKeys, resumeMailbox, setupMailboxKeys, startAutoLock, unlockMailbox, WrongPasswordError,
   type DeviceKeyStore, type MailboxKeyState, type MailboxSession,
 } from "../crypto";
 import { Icon } from "../ui";
 import { ApiError, mailApi, type ServerMailbox } from "./api";
 import { COUNTRIES } from "./countries";
-import { configureAuth, confirmResetPassword, confirmSignIn, confirmSignUp, resendSignUpCode, resetPassword, signIn, signOut, signUp } from "./auth";
+import { configureAuth, confirmResetPassword, confirmSignIn, confirmSignUp, getCurrentUser, resendSignUpCode, resetPassword, signIn, signOut, signUp } from "./auth";
 
 export interface LiveSession {
   address: string;
@@ -42,6 +42,15 @@ type Stage =
   | { s: "pick"; mailboxes: ServerMailbox[] } | { s: "switch"; mailboxes: ServerMailbox[]; error?: string }
   | { s: "recoveryShow"; code: string; file: string } | { s: "passwordChanged"; error?: string }
   | { s: "ready" } | { s: "locked"; error?: string } | { s: "fatal"; error: string };
+
+/** Set while a mailbox is locked, so a reload can't skip the password. */
+const lockFlag = (address: string) => `mtmail-locked:${address}`;
+function setLocked(address: string, locked: boolean) {
+  try { if (locked) localStorage.setItem(lockFlag(address), "1"); else localStorage.removeItem(lockFlag(address)); } catch { /* storage blocked */ }
+}
+function isLocked(address: string): boolean {
+  try { return localStorage.getItem(lockFlag(address)) === "1"; } catch { return true; }
+}
 
 function device(): DeviceKeyStore | null {
   try { return createIndexedDbDeviceStore(); } catch { return null; }
@@ -170,13 +179,6 @@ export function LiveGate({ children }: { children: ReactNode }) {
   const [opened, setOpened] = useState<{ address: string; displayName: string; lockedKeys: number } | null>(null);
   const dev = useRef<DeviceKeyStore | null>(null);
 
-  // Always start from a fresh sign-in: the mailbox key needs the password anyway.
-  useEffect(() => {
-    configureAuth();
-    dev.current = device();
-    const signup = new URLSearchParams(location.search).get("mode") === "signup";
-    signOut().catch(() => {}).finally(() => setStage({ s: signup ? "signup" : "signin" }));
-  }, []);
 
   const saveKeys = async (state: MailboxKeyState) => {
     const mb = mailbox.current!, current = keyState.current;
@@ -185,8 +187,15 @@ export function LiveGate({ children }: { children: ReactNode }) {
     setOpened({ address: mb.address, displayName: mb.displayName, lockedKeys: lockedKeyCount(state) });
   };
 
+  /** Lets this browser reopen the mailbox after a reload, until sign-out. */
+  const remember = (s: MailboxSession) => {
+    setLocked(s.address, false);
+    if (dev.current) s.rememberSession(dev.current).catch(() => {});
+  };
+
   const finishUnlock = useCallback((s: MailboxSession) => {
     password.current = "";
+    remember(s);
     setSession(s);
     setStage({ s: "ready" });
   }, []);
@@ -194,6 +203,21 @@ export function LiveGate({ children }: { children: ReactNode }) {
   async function openMailbox(mb: ServerMailbox) {
     mailbox.current = mb;
     setOpened({ address: mb.address, displayName: mb.displayName, lockedKeys: mb.keyState ? lockedKeyCount(mb.keyState) : 0 });
+    // Reopened after a reload: no password in memory.
+    if (!password.current) {
+      if (!mb.keyState) { await signOut().catch(() => {}); return setStage({ s: "signin", error: "Sign in again to finish setting up your mailbox." }); }
+      keyState.current = { state: mb.keyState, version: mb.keyVersion };
+      if (isLocked(mb.address) || !dev.current) return setStage({ s: "locked" });
+      setStage({ s: "working", label: "Opening your mailbox…" });
+      try {
+        const { session: s, state, restored } = await resumeMailbox(mb.keyState, dev.current);
+        if (restored.length) await saveKeys(state);
+        return finishUnlock(s);
+      } catch (e) {
+        if (e instanceof NoDeviceSessionError) return setStage({ s: "locked" });
+        throw e;
+      }
+    }
     if (!mb.keyState) {
       setStage({ s: "working", label: "Creating your mailbox key…" });
       const { state, session: s, recovery } = await setupMailboxKeys({ address: mb.address, password: password.current, displayName: mb.displayName }, { device: dev.current });
@@ -201,6 +225,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
       await saveKeys(state);
       setSession(s);
       password.current = "";
+      remember(s);
       setStage({ s: "recoveryShow", code: recovery.code, file: recovery.file });
       return;
     }
@@ -235,6 +260,19 @@ export function LiveGate({ children }: { children: ReactNode }) {
     await openMailbox(list[0]!);
   }
 
+  // Stay signed in across reloads (like Gmail): reopen the mailbox with what this browser
+  // remembered at sign-in, or ask for the password if it can't.
+  useEffect(() => {
+    configureAuth();
+    dev.current = device();
+    const signup = new URLSearchParams(location.search).get("mode") === "signup";
+    (async () => {
+      try { await getCurrentUser(); } catch { return setStage({ s: signup ? "signup" : "signin" }); }
+      await afterSignIn();
+    })().catch(() => signOut().catch(() => {}).finally(() => setStage({ s: "signin" })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, on load
+  }, []);
+
   const run = (fn: () => Promise<void>, back: (error: string) => Stage) => fn().catch(e => setStage(back(e instanceof ApiError || e instanceof Error ? errorText(e) : "Something went wrong.")));
 
   async function doSignIn(pw: string) {
@@ -254,15 +292,20 @@ export function LiveGate({ children }: { children: ReactNode }) {
     throw new Error("This account can’t sign in yet. Please contact support.");
   }
 
-  const lock = useCallback(() => { session?.lock(); setSession(null); setStage({ s: "locked" }); }, [session]);
+  const lock = useCallback(() => {
+    if (session) setLocked(session.address, true);
+    session?.lock(); setSession(null); setStage({ s: "locked" });
+  }, [session]);
 
   useEffect(() => {
     if (stage.s !== "ready" || !session) return;
-    return startAutoLock(session, { onLock: () => { setSession(null); setStage({ s: "locked" }); } });
+    return startAutoLock(session, { onLock: () => { setLocked(session.address, true); setSession(null); setStage({ s: "locked" }); } });
   }, [stage.s, session]);
 
   const doSignOut = useCallback(async () => {
     session?.lock(); setSession(null); password.current = "";
+    const addr = mailbox.current?.address;
+    if (addr) { setLocked(addr, false); await dev.current?.forgetSession(addr).catch(() => {}); }
     await signOut().catch(() => {});
     setStage({ s: "signin" });
   }, [session]);
