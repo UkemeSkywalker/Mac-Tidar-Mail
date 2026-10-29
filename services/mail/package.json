@@ -8,7 +8,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "build": "node scripts/build.mjs",
-    "provision": "tsx scripts/provision-mailbox.ts",
+    "reserve": "tsx scripts/reserve-address.ts",
     "read-latest": "tsx scripts/read-latest.ts",
     "audit-plaintext": "tsx scripts/audit-plaintext.ts",
     "redrive": "tsx scripts/redrive-inbound.ts"

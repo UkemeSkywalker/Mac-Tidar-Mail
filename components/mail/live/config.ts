@@ -8,4 +8,10 @@ export const liveConfig = {
   wsUrl: process.env.NEXT_PUBLIC_MAIL_WS ?? "",
 };
 
+/** True when this browser holds a Mail sign-in (checked without loading the sign-in library). */
+export function hasStoredSignIn(): boolean {
+  const key = `CognitoIdentityServiceProvider.${liveConfig.clientId}.LastAuthUser`;
+  try { return !!(localStorage.getItem(key) || sessionStorage.getItem(key)); } catch { return false; }
+}
+
 export const liveEnabled = !!(liveConfig.apiUrl && liveConfig.userPoolId && liveConfig.clientId);

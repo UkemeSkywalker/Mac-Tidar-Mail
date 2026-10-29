@@ -3,6 +3,7 @@
 
 variable "region" { type = string }
 variable "user_pool_id" { type = string }
+variable "user_pool_arn" { type = string }
 variable "client_id" { type = string }
 variable "app_origins" { type = list(string) }
 variable "bucket_name" { type = string }
@@ -20,11 +21,13 @@ variable "local_domains" { type = list(string) }
 variable "ses_identity_arn" { type = string }
 variable "ses_configuration_set" { type = string }
 variable "ses_events_topic_arn" { type = string }
+variable "signup_domain" { type = string }
 
 locals {
   function_name = "mactidar-mail-api"
   routes = [
     "GET /v1/mailboxes",
+    "POST /v1/mailboxes",
     "PUT /v1/mailboxes/{address}/keys",
     "GET /v1/mailboxes/{address}/messages",
     "PATCH /v1/mailboxes/{address}/messages",
@@ -37,6 +40,10 @@ locals {
     "GET /v1/mailboxes/{address}/drafts",
     "PUT /v1/mailboxes/{address}/drafts/{id}",
     "DELETE /v1/mailboxes/{address}/drafts/{id}",
+    "POST /v1/sessions",
+    "GET /v1/sessions/{id}/key",
+    "DELETE /v1/sessions/{id}",
+    "DELETE /v1/sessions",
   ]
 }
 
@@ -117,6 +124,11 @@ data "aws_iam_policy_document" "api" {
     resources = [var.ws_manage_arn]
   }
   statement {
+    sid       = "ReadMailAccountForMailboxClaim"
+    actions   = ["cognito-idp:AdminGetUser"]
+    resources = [var.user_pool_arn]
+  }
+  statement {
     sid       = "WriteSentCiphertext"
     actions   = ["s3:PutObject"]
     resources = ["${var.bucket_arn}/msg/*", "${var.bucket_arn}/att/*"]
@@ -156,6 +168,8 @@ resource "aws_lambda_function" "api" {
       MAIL_TABLE                          = var.table_name
       SES_CONFIGURATION_SET               = var.ses_configuration_set
       LOCAL_MAIL_DOMAINS                  = join(",", var.local_domains)
+      SIGNUP_DOMAIN                       = var.signup_domain
+      MAIL_USER_POOL_ID                   = var.user_pool_id
       WS_ENDPOINT                         = var.ws_endpoint
       NODE_OPTIONS                        = "--enable-source-maps"
       AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1"
@@ -215,6 +229,13 @@ resource "aws_apigatewayv2_stage" "default" {
     throttling_rate_limit  = 20
   }
 
+  # Opening a new mailbox gets a much lower limit than the rest of the API.
+  route_settings {
+    route_key              = "POST /v1/mailboxes"
+    throttling_burst_limit = 5
+    throttling_rate_limit  = 2
+  }
+
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.access.arn
     format = jsonencode({
@@ -222,6 +243,8 @@ resource "aws_apigatewayv2_stage" "default" {
       latencyMs = "$context.responseLatency", authError = "$context.authorizer.error", ip = "$context.identity.sourceIp"
     })
   }
+  # Route-level throttles need the routes to exist first.
+  depends_on = [aws_apigatewayv2_route.routes]
 }
 
 resource "aws_lambda_permission" "apigw" {

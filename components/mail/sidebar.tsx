@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { folderMatch, useMail } from "./store";
 import { Icon, labelDot } from "./ui";
 
@@ -24,11 +23,11 @@ export function Sidebar() {
       {sidebarOpen && <button aria-label="Close menu" className="fixed inset-0 z-40 bg-black/30 lg:hidden" onClick={() => setSidebarOpen(false)} />}
       <aside className={`fixed left-0 top-0 h-dvh w-64 bg-m-sb border-r border-m-sb-line flex flex-col z-50 shadow-[0_1px_8px_rgba(0,0,0,0.04)] transition-transform ${collapsed ? "lg:-translate-x-full" : "lg:translate-x-0"} ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="h-14 px-gutter flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-space-sm min-w-0" title="Mac Tidar home">
+          <button type="button" onClick={() => setFolder("inbox")} className="flex items-center gap-space-sm min-w-0 text-left" title="Inbox">
             <span className="w-8 h-8 rounded-m-xl bg-m-sb-cta text-m-sb-cta-text flex items-center justify-center shrink-0"><Icon name="mail" className="text-[18px]" /></span>
             <span className="t-headline-sm text-m-sb-strong truncate tracking-tight">Mac Tidar Mail</span>
             <span className="px-space-xs py-0.5 rounded-m-pill bg-m-suite text-m-suite-text t-label-sm uppercase tracking-wide">Suite</span>
-          </Link>
+          </button>
         </div>
 
         <div className="px-gutter py-space-xs">

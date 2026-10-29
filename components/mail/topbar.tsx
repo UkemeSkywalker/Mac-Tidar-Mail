@@ -96,6 +96,7 @@ export function Topbar({ searchRef }: { searchRef: React.RefObject<HTMLInputElem
             {live.switchMailbox && <MenuItem icon="switch_account" onClick={() => { close(); live.switchMailbox?.(); }}>Switch mailbox</MenuItem>}
             <MenuItem icon="lock" onClick={() => { close(); live.lock(); }}>Lock mailbox</MenuItem>
             <MenuItem icon="logout" onClick={() => { close(); void live.signOut(); }}>Sign out</MenuItem>
+            <MenuItem icon="devices" onClick={() => { close(); if (confirm("Sign out of Mac Tidar Mail on every device, including this one?")) void live.signOutEverywhere(); }}>Sign out of all devices</MenuItem>
           </Popover>
         </div>
       </div>

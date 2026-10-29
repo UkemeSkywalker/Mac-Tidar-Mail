@@ -32,6 +32,7 @@ export function CommandPalette({ focusSearch }: { focusSearch: () => void }) {
     { id: "shortcuts", label: "Keyboard shortcuts", hint: "?", icon: "keyboard", group: "General", run: done(() => setDialog({ kind: "shortcuts" })) },
     { id: "lock", label: "Lock mailbox", icon: "lock", group: "Accounts", run: done(() => live.lock()) },
     { id: "signout", label: "Sign out", icon: "logout", group: "Accounts", run: done(() => void live.signOut()) },
+    { id: "signout-all", label: "Sign out of all devices", icon: "devices", group: "Accounts", run: done(() => { if (confirm("Sign out of Mac Tidar Mail on every device, including this one?")) void live.signOutEverywhere(); }) },
   ], [skin, box.labels, live]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const q = text.trim().toLowerCase();

@@ -27,6 +27,10 @@ export interface MailboxMeta {
   keyState?: import("../crypto/keyring-types").MailboxKeyState;
   /** Bumped on every key change, for optimistic concurrency between devices. */
   keyVersion?: number;
+  /** "self" when claimed through sign-up; absent for admin-provisioned mailboxes. */
+  createdBy?: "self" | "admin";
+  /** Overrides the default daily recipient cap (new sign-ups start lower). */
+  dailyRecipientLimit?: number;
 }
 
 /** `MAILBOX#addr/SETTINGS`: labels, signature and preferences, encrypted in the browser. */

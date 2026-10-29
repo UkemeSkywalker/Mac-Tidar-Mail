@@ -1,5 +1,5 @@
 variable "region" {
-  description = "Everything runs in af-south-1: SES production access, inbound SMTP and Cloud's Cognito pool all live there."
+  description = "Everything runs in af-south-1: SES production access, inbound SMTP and the Mail user pool all live there."
   type        = string
   default     = "af-south-1"
 }
@@ -26,12 +26,6 @@ variable "app_origins" {
   description = "Browser origins allowed to call the mail API and upload/download encrypted blobs."
   type        = list(string)
   default     = ["https://mail.mactidar.com", "http://localhost:3000"]
-}
-
-variable "cognito_user_pool_id" {
-  description = "Mac Tidar Cloud's shared Cognito user pool. Terraform only adds an app client to it; the pool itself is never modified."
-  type        = string
-  default     = "af-south-1_378A7d9Bp"
 }
 
 variable "alert_email" {

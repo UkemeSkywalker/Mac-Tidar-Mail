@@ -3,18 +3,38 @@
 // checks the caller owns it, and answers 404 otherwise so addresses can't be probed.
 import { DeleteObjectsCommand, GetObjectCommand, ListObjectVersionsCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { ConditionalCheckFailedException, DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { ConditionalCheckFailedException, DynamoDBClient, TransactionCanceledException } from "@aws-sdk/client-dynamodb";
+import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, TransactWriteCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 import { normalizeAddress } from "../crypto/keys";
 import { SESv2Client } from "@aws-sdk/client-sesv2";
+import { randomBytes } from "node:crypto";
+import { AdminGetUserCommand, CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-provider";
 import { draftSk, folderGsi1, mailboxPk, META_SK, ownerGsi1, SETTINGS_SK, type DraftItem, type Folder, type MailboxMeta, type MessageItem, type SettingsItem } from "../shared/table";
 import { Conflict as SendConflict, sendMessage } from "./send";
 import { validateSend } from "./send-validate";
+import { displayNameOf, NEW_MAILBOX_DAILY_LIMIT, parseAddress, reservationKey, type Reservation } from "../shared/accounts";
 import { BadRequest, FOLDERS, validateKeyState, validatePatch, validateSettings, validateSks } from "./validate";
 
-export interface ApiConfig { table: string; bucket: string; configurationSet: string; localDomains: string[]; region: string }
-export interface ApiDeps { ddb: DynamoDBDocumentClient; s3: S3Client; ses: SESv2Client; config: ApiConfig; presign?: (s3: S3Client, cmd: GetObjectCommand) => Promise<string> }
+/** Sessions per account; each signed-in browser holds one. */
+const MAX_SESSIONS = 50;
+/** "Keep me signed in": ends after 30 days without use. */
+const PERSISTENT_SESSION_S = 30 * 86400;
+/** Tab-only sign-in: the browser drops its ID when the tab closes; ours goes after 12 hours unused. */
+const TAB_SESSION_S = 12 * 3600;
+const SESSION_SK = "KEY";
+const sessionPk = (id: string) => `SESSION#${id}`;
+const sessionsGsi1 = (sub: string) => `SESSIONS#${sub}`;
+interface SessionItem { pk: string; sk: string; gsi1pk: string; gsi1sk: string; ownerSub: string; clientKey: string; persistent: boolean; ttlSeconds: number; createdAt: string; expiresAt: number }
+
+export interface ApiConfig { table: string; bucket: string; configurationSet: string; localDomains: string[]; region: string; signupDomain: string }
+/** The parts of a Mail account the API needs (read from the user pool). */
+export interface AccountInfo { sub: string; email: string; emailVerified: boolean; givenName: string; familyName: string }
+export interface ApiDeps {
+  ddb: DynamoDBDocumentClient; s3: S3Client; ses: SESv2Client; config: ApiConfig;
+  account: (username: string) => Promise<AccountInfo | null>;
+  presign?: (s3: S3Client, cmd: GetObjectCommand) => Promise<string>;
+}
 type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
 type Result = APIGatewayProxyStructuredResultV2;
 
@@ -54,7 +74,7 @@ function parseBody(event: Event, maxChars = 600_000): unknown {
   catch { throw new BadRequest("Body must be JSON"); }
 }
 
-export function createHandler({ ddb, s3, ses, config, presign = (c, cmd) => getSignedUrl(c, cmd, { expiresIn: 300 }) }: ApiDeps) {
+export function createHandler({ ddb, s3, ses, config, account, presign = (c, cmd) => getSignedUrl(c, cmd, { expiresIn: 300 }) }: ApiDeps) {
   const T = config.table;
 
   async function ownedMailbox(sub: string, raw: string | undefined): Promise<MailboxMeta> {
@@ -83,6 +103,58 @@ export function createHandler({ ddb, s3, ses, config, presign = (c, cmd) => getS
         const mailboxes = (Items as MailboxMeta[]).filter(m => m.status === "active" && m.ownerSub === sub)
           .map(m => ({ address: m.address, displayName: m.displayName, keyState: m.keyState ?? null, keyVersion: m.keyVersion ?? 0 }));
         return json(200, { mailboxes });
+      }
+
+      case "POST /v1/mailboxes": {
+        // Opens the mailbox for the signed-in account's own address (its username). One per
+        // account; the OWNER#…/CLAIM marker makes that atomic. A reserved address (for example an
+        // existing mailbox moving to its own login) needs a reservation for this backup email.
+        const username = event.requestContext.authorizer?.jwt?.claims?.username;
+        if (typeof username !== "string") throw new BadRequest("This account has no Mac Tidar address");
+        const { address, reserved } = parseAddress(username, config.signupDomain);
+        const { Items = [] } = await ddb.send(new QueryCommand({ TableName: T, IndexName: "gsi1", KeyConditionExpression: "gsi1pk = :o", ExpressionAttributeValues: { ":o": ownerGsi1(sub) }, Limit: 1 }));
+        if (Items.length) throw new Conflict("This account already has a mailbox");
+        const acct = await account(username);
+        if (!acct || acct.sub !== sub || !acct.emailVerified) throw new Conflict("Verify your backup email first");
+
+        const [{ Item: res }, { Item: existing }] = await Promise.all([
+          ddb.send(new GetCommand({ TableName: T, Key: reservationKey(address) })),
+          ddb.send(new GetCommand({ TableName: T, Key: { pk: mailboxPk(address), sk: META_SK } })),
+        ]);
+        const reservation = res as Reservation | undefined;
+        const now = new Date().toISOString();
+        const claim = { Put: { TableName: T, Item: { pk: `OWNER#${sub}`, sk: "CLAIM", address, createdAt: now }, ConditionExpression: "attribute_not_exists(pk)" } };
+        const meta = existing as MailboxMeta | undefined;
+        let mailbox: MailboxMeta, items: NonNullable<ConstructorParameters<typeof TransactWriteCommand>[0]["TransactItems"]>;
+
+        if (reservation && reservation.backupEmail === acct.email && reservation.expiresAt * 1000 > Date.now()) {
+          const useIt = { Delete: { TableName: T, Key: reservationKey(address), ConditionExpression: "backupEmail = :e", ExpressionAttributeValues: { ":e": acct.email } } };
+          if (meta) {
+            // Move the existing mailbox (mail and keys unchanged) to this account.
+            mailbox = { ...meta, ownerSub: sub, gsi1pk: ownerGsi1(sub) };
+            items = [claim, useIt, { Update: { TableName: T, Key: { pk: meta.pk, sk: META_SK }, UpdateExpression: "SET ownerSub = :s, gsi1pk = :g",
+              ConditionExpression: "ownerSub = :old", ExpressionAttributeValues: { ":s": sub, ":g": ownerGsi1(sub), ":old": meta.ownerSub } } }];
+          } else {
+            mailbox = { pk: mailboxPk(address), sk: META_SK, gsi1pk: ownerGsi1(sub), gsi1sk: mailboxPk(address), address, ownerSub: sub, displayName: displayNameOf(acct), status: "active", createdAt: now, createdBy: "admin" };
+            items = [claim, useIt, { Put: { TableName: T, Item: mailbox, ConditionExpression: "attribute_not_exists(pk)" } }];
+          }
+        } else {
+          if (reserved || reservation) throw new Conflict("That address is reserved");
+          mailbox = { pk: mailboxPk(address), sk: META_SK, gsi1pk: ownerGsi1(sub), gsi1sk: mailboxPk(address), address, ownerSub: sub, displayName: displayNameOf(acct), status: "active", createdAt: now, createdBy: "self", dailyRecipientLimit: NEW_MAILBOX_DAILY_LIMIT };
+          items = [claim, { Put: { TableName: T, Item: mailbox, ConditionExpression: "attribute_not_exists(pk)" } }];
+        }
+        try {
+          await ddb.send(new TransactWriteCommand({ TransactItems: items }));
+        } catch (e) {
+          if (e instanceof TransactionCanceledException) {
+            const [first, ...rest] = e.CancellationReasons ?? [];
+            if (first?.Code === "ConditionalCheckFailed") throw new Conflict("This account already has a mailbox");
+            if (rest.some(r => r?.Code === "ConditionalCheckFailed")) throw new Conflict("That address is taken");
+          }
+          throw e;
+        }
+        console.log(JSON.stringify({ event: "mailbox-claimed", moved: !!(reservation && meta) }));
+        return json(201, { mailbox: { address, displayName: mailbox.displayName, keyState: mailbox.keyState ?? null, keyVersion: mailbox.keyVersion ?? 0 } });
       }
 
       case "PUT /v1/mailboxes/{address}/keys": {
@@ -235,9 +307,62 @@ export function createHandler({ ddb, s3, ses, config, presign = (c, cmd) => getS
         return json(200, { deleted: true });
       }
 
+      // ── Sign-in sessions: our half of the key that reopens a mailbox after a reload ─────
+      // The browser keeps the mailbox passphrase sealed under `clientKey`; we keep only
+      // `clientKey`. Neither half opens mail alone, and deleting ours ends that session.
+      case "POST /v1/sessions": {
+        const { persistent } = (parseBody(event, 200) ?? {}) as { persistent?: unknown };
+        if (typeof persistent !== "boolean") throw new BadRequest("persistent must be true or false");
+        const count = (await ddb.send(new QueryCommand({ TableName: T, IndexName: "gsi1", KeyConditionExpression: "gsi1pk = :o", ExpressionAttributeValues: { ":o": sessionsGsi1(sub) }, Select: "COUNT" }))).Count ?? 0;
+        if (count >= MAX_SESSIONS) throw new Conflict("Too many signed-in devices. Sign out of all devices, then sign in again.");
+        const id = randomBytes(16).toString("base64url"), clientKey = randomBytes(32).toString("base64");
+        const now = Math.floor(Date.now() / 1000), ttl = persistent ? PERSISTENT_SESSION_S : TAB_SESSION_S;
+        const item: SessionItem = { pk: sessionPk(id), sk: SESSION_SK, gsi1pk: sessionsGsi1(sub), gsi1sk: id, ownerSub: sub, clientKey, persistent, ttlSeconds: ttl, createdAt: new Date().toISOString(), expiresAt: now + ttl };
+        await ddb.send(new PutCommand({ TableName: T, Item: item, ConditionExpression: "attribute_not_exists(pk)" }));
+        return json(201, { id, clientKey, expiresAt: item.expiresAt });
+      }
+
+      case "GET /v1/sessions/{id}/key": {
+        // Each use slides the expiry forward: sessions end after a stretch of no use.
+        const s = await ownedSession(sub, p.id);
+        const expiresAt = Math.floor(Date.now() / 1000) + s.ttlSeconds;
+        await ddb.send(new UpdateCommand({ TableName: T, Key: { pk: s.pk, sk: SESSION_SK }, UpdateExpression: "SET expiresAt = :e", ConditionExpression: "ownerSub = :s", ExpressionAttributeValues: { ":e": expiresAt, ":s": sub } }));
+        return json(200, { clientKey: s.clientKey, expiresAt });
+      }
+
+      case "DELETE /v1/sessions/{id}": {
+        const s = await ownedSession(sub, p.id).catch(e => { if (e instanceof NotFound) return null; throw e; });
+        if (s) await ddb.send(new DeleteCommand({ TableName: T, Key: { pk: s.pk, sk: SESSION_SK }, ConditionExpression: "ownerSub = :s", ExpressionAttributeValues: { ":s": sub } }));
+        return json(200, { deleted: true });
+      }
+
+      case "DELETE /v1/sessions": {
+        // Sign out of all devices: every sealed copy anywhere stops opening the mailbox.
+        let deleted = 0, start: Record<string, unknown> | undefined;
+        do {
+          const page = await ddb.send(new QueryCommand({ TableName: T, IndexName: "gsi1", KeyConditionExpression: "gsi1pk = :o", ExpressionAttributeValues: { ":o": sessionsGsi1(sub) }, ExclusiveStartKey: start }));
+          for (const it of (page.Items ?? []) as SessionItem[]) {
+            await ddb.send(new DeleteCommand({ TableName: T, Key: { pk: it.pk, sk: SESSION_SK } }));
+            deleted++;
+          }
+          start = page.LastEvaluatedKey;
+        } while (start);
+        console.log(JSON.stringify({ event: "sessions-revoked", deleted }));
+        return json(200, { deleted });
+      }
+
       default:
         throw new NotFound();
     }
+  }
+
+  async function ownedSession(sub: string, id: string | undefined): Promise<SessionItem> {
+    if (!/^[A-Za-z0-9_-]{22}$/.test(id ?? "")) throw new NotFound();
+    const { Item } = await ddb.send(new GetCommand({ TableName: T, Key: { pk: sessionPk(id!), sk: SESSION_SK } }));
+    const s = Item as SessionItem | undefined;
+    // TTL deletion can lag by days, so check the expiry here too.
+    if (!s || s.ownerSub !== sub || s.expiresAt * 1000 <= Date.now()) throw new NotFound();
+    return s;
   }
 
   return async (event: Event): Promise<Result> => {
@@ -261,15 +386,28 @@ function env(name: string): string {
   return v;
 }
 
+async function poolAccount(cognito: CognitoIdentityProviderClient, poolId: string, username: string): Promise<AccountInfo | null> {
+  try {
+    const u = await cognito.send(new AdminGetUserCommand({ UserPoolId: poolId, Username: username }));
+    const attr = (n: string) => u.UserAttributes?.find(a => a.Name === n)?.Value ?? "";
+    return { sub: attr("sub"), email: attr("email").toLowerCase(), emailVerified: attr("email_verified") === "true", givenName: attr("given_name"), familyName: attr("family_name") };
+  } catch (e) {
+    if ((e as Error).name === "UserNotFoundException") return null;
+    throw e;
+  }
+}
+
 let cached: ReturnType<typeof createHandler> | undefined;
 export const handler = (event: Event) => {
   cached ??= createHandler({
+    account: (cognito => (username: string) => poolAccount(cognito, env("MAIL_USER_POOL_ID"), username))(new CognitoIdentityProviderClient({})),
     ddb: DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } }),
     s3: new S3Client({}),
     ses: new SESv2Client({}),
     config: {
       table: env("MAIL_TABLE"), bucket: env("MAIL_BUCKET"), configurationSet: env("SES_CONFIGURATION_SET"), region: env("AWS_REGION"),
       localDomains: env("LOCAL_MAIL_DOMAINS").split(",").map(d => d.trim().toLowerCase()),
+      signupDomain: env("SIGNUP_DOMAIN").trim().toLowerCase(),
     },
   });
   return cached(event);

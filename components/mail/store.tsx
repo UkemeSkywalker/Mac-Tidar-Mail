@@ -18,6 +18,19 @@ export type Sort = "newest" | "oldest" | "sender";
 export type Toast = { id: number; text: string; undo?: () => void };
 export type Draft = { id: string; to: Person[]; cc: Person[]; subject: string; body: string; thread?: string; attachments: Message["attachments"]; savedAt?: string };
 export type ComposerState = { open: boolean; mode: "mini" | "full"; minimized: boolean; draft: Draft };
+type NavState = { folder: string; thread: string | null };
+const SYSTEM_FOLDERS = new Set(["inbox", "starred", "snoozed", "sent", "drafts", "archive", "spam", "trash"]);
+const navHash = (f: string, thread: string | null) => `#${encodeURIComponent(f)}${thread ? `/${encodeURIComponent(thread)}` : ""}`;
+const navState = (): NavState | undefined => (history.state as { mt?: NavState } | null)?.mt;
+function navPush(f: string, thread: string | null) { try { history.pushState({ mt: { folder: f, thread } }, "", navHash(f, thread)); } catch { /* ignore */ } }
+function navReplace(f: string, thread: string | null) { try { history.replaceState({ mt: { folder: f, thread } }, "", navHash(f, thread)); } catch { /* ignore */ } }
+/** The folder in a #folder[/thread] hash (after a reload); anything unknown is the inbox. */
+function parseNavHash(hash: string): { folder: string } {
+  let f = "inbox";
+  try { f = decodeURIComponent(hash.replace(/^#/, "").split("/")[0] ?? "") || "inbox"; } catch { /* bad escape */ }
+  return { folder: SYSTEM_FOLDERS.has(f) || /^label:.{1,64}$/.test(f) ? f : "inbox" };
+}
+
 export type Dialog = null | { kind: "settings"; tab?: string } | { kind: "shortcuts" } | { kind: "label" };
 export type ThreadRow = { thread: string; latest: Message; messages: Message[]; unread: boolean; starred: boolean; count: number };
 
@@ -283,25 +296,55 @@ function useMailState(live: LiveSession) {
   const threadMessages = useCallback((thread: string) => box.messages.filter(m => m.thread === thread && m.kind === "message").sort((a, b) => +new Date(a.date) - +new Date(b.date)), [box.messages]);
   const inThreads = (threads: string[]) => (m: Message) => threads.includes(m.thread) && m.kind === "message";
 
-  const setFolder = (f: string) => { setFolderState(f); setSelected([]); setView({ kind: "list" }); setPage(0); setSidebarOpen(false); };
-  const openThread = (thread: string) => {
+  // Browser history follows the app, like Gmail (#inbox, #inbox/<thread>), so Back and Forward
+  // move between folders and conversations instead of leaving the app.
+  const showFolder = (f: string) => { setFolderState(f); setSelected([]); setView({ kind: "list" }); setPage(0); setSidebarOpen(false); };
+  const showThread = (thread: string) => {
     setView({ kind: "thread", thread });
     void loadBodies(thread);
     updateMessages(m => m.thread === thread && !m.read, () => ({ read: true }), undefined, false);
   };
-  const closeThread = () => setView({ kind: "list" });
+  const setFolder = (f: string) => {
+    if (f !== folder || view.kind === "thread") navPush(f, null);
+    showFolder(f);
+  };
+  const openThread = (thread: string) => { navPush(folder, thread); showThread(thread); };
+  const closeThread = () => {
+    if (navState()?.thread) history.back(); // popstate shows the list
+    else setView({ kind: "list" });
+  };
+  /** Leaves the open conversation without adding a history step (it was moved or deleted). */
+  const toList = () => { setView({ kind: "list" }); navReplace(folder, null); };
+
+  const navRef = useRef({ showFolder, showThread, messages: box.messages });
+  useEffect(() => { navRef.current = { showFolder, showThread, messages: box.messages }; });
+  useEffect(() => {
+    const start = parseNavHash(location.hash);
+    if (start.folder !== "inbox") navRef.current.showFolder(start.folder);
+    navReplace(start.folder, null);
+    const onPop = (e: PopStateEvent) => {
+      const st = (e.state as { mt?: NavState } | null)?.mt;
+      if (!st) return;
+      const nav = navRef.current;
+      nav.showFolder(st.folder);
+      if (st.thread && nav.messages.some(m => m.thread === st.thread)) nav.showThread(st.thread);
+      else if (st.thread) navReplace(st.folder, null);
+    };
+    addEventListener("popstate", onPop);
+    return () => removeEventListener("popstate", onPop);
+  }, []);
 
   const move = (threads: string[], target: Message["folder"]) => {
     if (!threads.length) return;
     const where = { trash: "moved to Trash", spam: "reported as spam", inbox: "moved to Inbox", archive: "archived", sent: "moved to Sent" }[target];
     updateMessages(inThreads(threads), () => ({ folder: target, snoozedUntil: null }), `${threads.length > 1 ? `${threads.length} conversations` : "Conversation"} ${where}`);
     setSelected([]);
-    if (view.kind === "thread" && threads.includes(view.thread)) setView({ kind: "list" });
+    if (view.kind === "thread" && threads.includes(view.thread)) toList();
   };
   const destroy = (threads: string[]) => {
     update(b => ({ ...b, messages: b.messages.filter(m => !threads.includes(m.thread)) }), `${threads.length > 1 ? `${threads.length} conversations` : "Conversation"} deleted forever`, true);
     setSelected([]);
-    if (view.kind === "thread" && threads.includes(view.thread)) setView({ kind: "list" });
+    if (view.kind === "thread" && threads.includes(view.thread)) toList();
   };
   const markRead = (threads: string[], read: boolean) => { updateMessages(inThreads(threads), () => ({ read }), read ? "Marked as read" : "Marked as unread"); setSelected([]); };
   const toggleStar = (thread: string) => {
@@ -312,7 +355,7 @@ function useMailState(live: LiveSession) {
   const snooze = (threads: string[], until: Date) => {
     updateMessages(inThreads(threads), () => ({ snoozedUntil: until.toISOString() }), `Snoozed until ${until.toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })}`);
     setSelected([]);
-    if (view.kind === "thread" && threads.includes(view.thread)) setView({ kind: "list" });
+    if (view.kind === "thread" && threads.includes(view.thread)) toList();
   };
   const toggleLabel = (threads: string[], name: string) => {
     const all = threads.every(t => box.messages.some(m => m.thread === t && m.labels.includes(name)));
@@ -383,7 +426,7 @@ function useMailState(live: LiveSession) {
       });
       void mailApi.deleteDraft(live.address, draft.id).catch(() => {});
       toast(payload.external ? (opts.archive ? "Sent and archived" : "Message sent") : "Sent with end-to-end encryption");
-      if (opts.archive && view.kind === "thread") setView({ kind: "list" });
+      if (opts.archive && view.kind === "thread") toList();
       return null;
     } catch (e) {
       return e instanceof Error ? e.message : "Couldn’t send your message";
@@ -405,7 +448,7 @@ function useMailState(live: LiveSession) {
 
   return {
     live, loading, loadBodies, downloadAttachment, refresh,
-    db, box, account, rows, threadMessages, folder, setFolder, tab, setTab: (t: Category) => { setTab(t); setSelected([]); setPage(0); }, query, setQuery: (q: string) => { setQuery(q); setPage(0); if (q) setView({ kind: "list" }); },
+    db, box, account, rows, threadMessages, folder, setFolder, tab, setTab: (t: Category) => { setTab(t); setSelected([]); setPage(0); }, query, setQuery: (q: string) => { setQuery(q); setPage(0); if (q && view.kind === "thread") toList(); },
     filters, setFilters, sort, setSort, selected, setSelected, view, openThread, closeThread, page, setPage,
     move, destroy, markRead, toggleStar, snooze, toggleLabel, createLabel, updateSettings, emptyTrash,
     composer, setComposer, compose, editDraft, persistDraft, closeComposer, openDraft, send,

@@ -16,7 +16,7 @@ const ddb = mockClient(DynamoDBDocumentClient), s3 = mockClient(S3Client), ses =
 let myFp = "", friendFp = "", myPub: PublicKey, friendPub: PublicKey;
 let items: Record<string, unknown>[], objects: { key: string; body: Uint8Array }[], sentMime = "";
 
-const api = () => createHandler({ ddb: DynamoDBDocumentClient.from(new DynamoDBClient({})), s3: new S3Client({}), ses: new SESv2Client({}), config: { table: "t", bucket: "b", configurationSet: "mactidar-mail", localDomains: ["beta.mactidar.com"], region: "af-south-1" } });
+const api = () => createHandler({ ddb: DynamoDBDocumentClient.from(new DynamoDBClient({})), s3: new S3Client({}), ses: new SESv2Client({}), account: async () => null, config: { table: "t", bucket: "b", configurationSet: "mactidar-mail", localDomains: ["beta.mactidar.com"], region: "af-south-1", signupDomain: "beta.mactidar.com" } });
 const meta = (address: string, fp: string, owner = OWNER) => ({ pk: `MAILBOX#${address}`, sk: "META", address, ownerSub: owner, displayName: "Ukeme Eseme", status: "active", gsi1pk: "x", gsi1sk: "x", createdAt: "x", keyState: { version: 1, address, primaryFingerprint: fp, keys: [{ fingerprint: fp, publicKey: "p", privateKey: "x", status: "active", createdAt: "x" }], recovery: null } });
 
 async function cipherFor(keys: PublicKey[], fp: string, attachments: Uint8Array[] = []) {

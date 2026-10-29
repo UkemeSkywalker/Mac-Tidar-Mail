@@ -11,6 +11,9 @@ echo "› Building…"
 npm run build >/dev/null
 git checkout -q -- next-env.d.ts 2>/dev/null || true
 grep -rqs "execute-api.af-south-1.amazonaws.com" out/_next/static || { echo "Build is missing the mail API config (.env.production)"; exit 1; }
+# .env.local overrides .env.production at build time; make sure the build uses Terraform's current sign-in client.
+CLIENT_ID=$(terraform -chdir=infra output -json mail_app_config | python3 -I -c 'import json,sys; print(json.load(sys.stdin)["NEXT_PUBLIC_COGNITO_CLIENT_ID"])')
+grep -rqs "$CLIENT_ID" out/_next/static || { echo "Build doesn't use the current Cognito client ($CLIENT_ID). Check .env.local and .env.production."; exit 1; }
 
 ZIP="$(mktemp -d)/site.zip"
 (cd out && zip -qr "$ZIP" .)

@@ -1,6 +1,6 @@
 # Mac Tidar Mail infrastructure
 
-Terraform for the mail backend. Everything lives in **af-south-1** (SES production access, SES inbound and Mac Tidar Cloud's Cognito pool are all there) in account `831981619011`.
+Terraform for the mail backend. Everything lives in **af-south-1** (SES production access, SES inbound and the Mail user pool are all there) in account `831981619011`.
 
 State is stored in the existing `mactidar-tfstate-831981619011` bucket under `mactidar-mail/terraform.tfstate` — separate from Mac Tidar Cloud's state.
 
@@ -22,7 +22,7 @@ terraform output dns_records_to_add_at_namecheap
 | `storage` | `mactidar-mail-<account>` bucket: private, TLS-only, versioned; `raw/` expires after 3 days |
 | `table` | `mactidar-mail` DynamoDB table with folder (`gsi1`) and thread (`gsi2`) indexes, PITR, deletion protection |
 | `ses` | `mactidar.com` sending identity (2048-bit DKIM), MAIL FROM `bounce.mactidar.com`, `mactidar-mail` configuration set (TLS required, bounce/complaint suppression, events → SNS) |
-| `auth_client` | `mactidar-mail-web` app client on Cloud's user pool (SRP sign-in). The pool itself is never modified. |
+| `users` | Mail's own Cognito user pool: the @mactidar.com address is the username (the only sign-in name); the email attribute is the backup address for codes. Pre-sign-up Lambda + daily clean-up of unfinished sign-ups. |
 | `monitoring` | alerts topic + email, `mactidar-mail-monthly` budget, account CloudTrail |
 
 ## Manual steps
