@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { CSSProperties, ReactNode, useEffect, useState } from "react";
 import { saveSkin, useSkin, type SkinKey } from "./skin-store";
 import { hasStoredSignIn, liveEnabled } from "./mail/live/config";
+import { BrandMark } from "./brand";
 
 // Every account entry point opens the mail app; the demo reads ?mode= to show sign-in or sign-up.
 const APP_URL = "/app/";
@@ -49,22 +50,22 @@ const skins: Record<SkinKey, Skin> = {
 };
 
 
-const navLinks = [["#features", "Bento Suite"], ["#workspace", "Workspace"], ["#ecosystem", "Ecosystem"], ["#philosophy", "Values"], ["#faqs", "FAQs"]];
+const navLinks = [["#features", "Features"], ["#workspace", "Workspace"], ["#privacy", "Privacy"], ["#philosophy", "Values"], ["#faqs", "FAQs"]];
 
 const faqs: [string, ReactNode][] = [
-  ["What is Mac Tidar Mail?", "Mac Tidar Mail is an ultra-fast, human-centric webmail application built for professionals, founders, and modern teams. It features zero-loss offline drafting, sub-40ms vector search, and unified workspace organization."],
-  ["How do I create an account?", "Click on the 'Get Started' or 'Create Your Account' buttons on this page. You will be guided through a simple registration process to reserve your personalized address."],
-  ["Will my email address end in @mactidar.com?", <>Yes! All native accounts registered through the service receive an authentic <strong className="text-forest">yourname@mactidar.com</strong> email address. Custom domains are also supported for enterprise teams.</>],
-  ["Can I use Mac Tidar Mail on my phone?", "Yes. Mac Tidar Mail is a responsive Progressive Web App (PWA). You can install it on iOS Safari or Android Chrome with offline cache and instant push notifications."],
-  ["Is Mac Tidar Mail part of Mac Tidar Cloud?", "Yes, Mac Tidar Mail is closely integrated with Mac Tidar Cloud for document collaboration, encrypted attachment hosting, and team permissions."],
-  ["Can I access other Mac Tidar products with the same account?", "Absolutely. Your Mac Tidar credentials work as a Single Sign-On (SSO) passkey across the entire Mac Tidar Suite."],
+  ["What is Mac Tidar Mail?", "Mac Tidar Mail is zero-access encrypted email with your own @mactidar.com address. Your mail is encrypted with a key only you hold, so it can only be read in your browser after you unlock it. Mac Tidar can't read it."],
+  ["How do I create an account?", "Click 'Get Started' or 'Create Your Account' on this page. Pick your address, add your name, date of birth and phone number, and a backup email at another provider. We send a code to the backup email to confirm it's yours."],
+  ["Will my email address end in @mactidar.com?", <>Yes. Every account gets a <strong className="text-forest">yourname@mactidar.com</strong> address, and that address is how you sign in. Your backup email is only used to reset your password; you can&apos;t sign in with it.</>],
+  ["What happens if I forget my password?", "Reset it with a code sent to your backup email. Because only your password unlocks your key, older mail then needs your recovery file (made when you create your account) or a device where you're still signed in. Mac Tidar can't recover it for you, which is the point."],
+  ["Can Mac Tidar read my email?", "No. Mail from outside is encrypted with your key the moment it arrives and the readable copy is deleted. Your drafts, labels and settings are encrypted in your browser. Mail between Mac Tidar addresses is encrypted in the sender's browser and signed, end to end."],
+  ["Can I use Mac Tidar Mail on my phone?", "Yes, in your phone's browser at mail.mactidar.com. The layout adapts to small screens. Native apps aren't available yet."],
 ];
 
 const pillars = [
-  ["01", "Human Simplicity", "No bloated sidebars or confusing settings menus. Just a clear, calm view of who is reaching out and what requires action."],
-  ["02", "Lightning Speed", "Engineered with Rust workers and pgvector indexing. Cold starts take less than 120ms and searches return in 38 milliseconds."],
-  ["03", "Thoughtful Organization", "Label taxonomies for Engineering, Product, Design, and Invoices that keep projects contextually separated yet always searchable."],
-  ["04", "Accessible by Design", "Full keyboard accessibility compliant with WCAG 2.2 AA standards. High contrast mode, legible typography, and low cognitive load."],
+  ["01", "Private by Design", "Your password never leaves your browser. It unlocks your key there, so the server only ever stores encrypted mail it can't open."],
+  ["02", "Calm Simplicity", "A clear view of who's writing and what needs you. Primary, Updates and Newsletters are sorted for you as mail arrives."],
+  ["03", "Thoughtful Organization", "Labels, stars, snooze and archive keep projects apart without losing anything. Search finds mail across your folders."],
+  ["04", "Keyboard First", "Compose, archive, star, reply and move between messages without touching the mouse, or press ⌘K to jump anywhere."],
 ];
 
 function Icon({ name, className = "" }: { name: string; className?: string }) {
@@ -133,9 +134,7 @@ export function MarketingHome() {
       <div className="sticky top-4 z-50 max-w-6xl mx-auto px-4 sm:px-6">
         <header className="bg-white/85 backdrop-blur-xl border border-linen-border/80 rounded-full py-2.5 px-4 sm:px-6 shadow-xs shadow-forest/5 flex items-center justify-between transition-all">
           <Link aria-label="Mac Tidar Mail Homepage" className="flex items-center gap-3 group" href="#">
-            <div className="w-9 h-9 rounded-full bg-forest text-mint flex items-center justify-center font-bold shadow-md shadow-forest/20 group-hover:scale-105 transition-transform">
-              <Icon name="mail" className="text-[19px]" />
-            </div>
+            <BrandMark className="h-8 group-hover:scale-105 transition-transform" />
             <div className="flex items-center gap-2">
               <span className="text-base font-bold tracking-tight text-forest-night">Mac Tidar</span>
               <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-mint-tint text-forest border border-mint/50">Mail</span>
@@ -175,9 +174,9 @@ export function MarketingHome() {
           <div className="flex justify-center mb-8">
             <div className="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-white border border-mint/70 shadow-xs text-xs font-semibold text-forest-night">
               <span className="w-2 h-2 rounded-full bg-forest animate-ping" />
-              <span className="text-forest font-bold">Mac Tidar 2.14</span>
+              <span className="text-forest font-bold">Now open</span>
               <span className="text-stone-300">/</span>
-              <span className="text-stone-600">Pure Organic Clarity &amp; Sub-40ms Search</span>
+              <span className="text-stone-600">Claim your free @mactidar.com address</span>
               <Icon name="arrow_forward" className="text-[15px] text-forest" />
             </div>
           </div>
@@ -188,7 +187,7 @@ export function MarketingHome() {
               <div className="space-y-6 relative z-10">
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-forest-50 text-forest text-xs font-bold uppercase tracking-wider border border-forest/10">
                   <span className="w-1.5 h-1.5 rounded-full bg-forest" />
-                  Ambient Neo-Modern Webmail
+                  Zero-Access Encrypted Webmail
                 </div>
                 <h1 className="text-4xl sm:text-6xl font-extrabold tracking-tight text-forest-night leading-[1.08] sm:leading-none">
                   Your inbox.<br />
@@ -196,7 +195,7 @@ export function MarketingHome() {
                   <span className="text-transparent bg-clip-text bg-linear-to-r from-forest via-forest to-emerald-700">A calmer way to connect.</span>
                 </h1>
                 <p className="text-base sm:text-lg text-stone-600 max-w-xl font-normal leading-relaxed sm:leading-7">
-                  Replace cluttered noise with lush, intuitive structure. End-to-end encrypted threads, zero-loss offline drafts, and lighting-fast pgvector intelligence built for creative founders and modern teams.
+                  Replace cluttered noise with calm, intuitive structure. Your mail is encrypted with a key only you hold, messages between Mac Tidar users are end-to-end encrypted, and trackers are blocked before they can see you open an email.
                 </p>
               </div>
               <div className="pt-8 sm:pt-10 space-y-6 relative z-10">
@@ -211,7 +210,7 @@ export function MarketingHome() {
                   </a>
                 </div>
                 <div className="pt-4 border-t border-linen-border flex flex-wrap items-center gap-6 text-xs font-semibold text-stone-600">
-                  {["Zero-loss CRDT Drafts", "SOC-2 Type II Certified", "Pure Privacy Guaranteed"].map(t => <span key={t} className="flex items-center gap-1.5"><Check />{t}</span>)}
+                  {["Only you hold the key", "Encrypted drafts", "No ads, no tracking pixels"].map(t => <span key={t} className="flex items-center gap-1.5"><Check />{t}</span>)}
                 </div>
               </div>
             </div>
@@ -224,9 +223,9 @@ export function MarketingHome() {
                 <div className="flex items-center justify-between gap-2">
                   <div className="glass-mint-pill px-3 py-1.5 rounded-full text-xs font-bold text-forest-night inline-flex items-center gap-2 shadow-xs">
                     <span className="w-2 h-2 rounded-full bg-mint animate-pulse" />
-                    Live Sync: 38ms pgvector
+                    New mail arrives live
                   </div>
-                  <div className="bg-forest-night/80 backdrop-blur-md px-3 py-1 rounded-full text-[11px] font-mono text-mint border border-mint/30">SOC-2 Type II</div>
+                  <div className="bg-forest-night/80 backdrop-blur-md px-3 py-1 rounded-full text-[11px] font-mono text-mint border border-mint/30">End-to-end · verified</div>
                 </div>
                 <div className="bg-white/95 backdrop-blur-md rounded-2xl p-4 border border-white shadow-xl text-stone-900">
                   <div className="flex items-center justify-between pb-2 border-b border-stone-100">
@@ -234,12 +233,12 @@ export function MarketingHome() {
                       <div className="w-7 h-7 rounded-full bg-forest text-mint flex items-center justify-center font-bold text-xs">ER</div>
                       <div>
                         <h4 className="text-xs font-bold text-stone-900">Elena Rostova</h4>
-                        <p className="text-[10px] text-stone-500">VP Product • Sub-40ms sprint</p>
+                        <p className="text-[10px] text-stone-500">VP Product • elena@mactidar.com</p>
                       </div>
                     </div>
                     <span className="px-2 py-0.5 rounded-sm text-[10px] font-bold bg-mint-tint text-forest border border-mint/60">URGENT</span>
                   </div>
-                  <p className="text-xs font-semibold text-stone-800 pt-2 truncate">Q3 Product Roadmap: Multi-tenant Search Index</p>
+                  <p className="text-xs font-semibold text-stone-800 pt-2 truncate">Q3 Product Roadmap: final review before launch</p>
                 </div>
               </div>
             </div>
@@ -247,9 +246,9 @@ export function MarketingHome() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
             {[
-              ["bolt", "< 38ms", "p95 Latency", "Instant retrieval via Rust workers and vector pipelines."],
-              ["shield_lock", "100% Zero-Loss", "CRDT Sync", "Local-first IndexedDB buffer preserves every single draft keystroke."],
-              ["alternate_email", "@mactidar", "Identity", "Unified Single Sign-On passkey across Cloud and Account services."],
+              ["shield_lock", "Zero-access", "Encryption", "Encrypted with your key on arrival. Only your browser can unlock it."],
+              ["verified_user", "End-to-end", "Mac Tidar ↔ Mac Tidar", "Encrypted in the sender's browser and signed, with a verified badge."],
+              ["alternate_email", "@mactidar", "Your address", "Your address is your sign-in. Your backup email only resets your password."],
             ].map(([icon, value, label, copy]) => (
               <div key={icon} className="bg-white rounded-3xl p-6 border border-linen-border shadow-bento flex items-center gap-5 hover:border-mint transition-all">
                 <div className="w-14 h-14 rounded-2xl bg-forest-50 border border-forest/10 flex items-center justify-center text-forest shrink-0">
@@ -285,7 +284,7 @@ export function MarketingHome() {
             From everyday conversations to your biggest ideas, Mac Tidar Mail gives every message a serene place to belong.
           </p>
           <div className="pt-8 flex flex-wrap justify-center items-center gap-4 sm:gap-10 text-xs sm:text-sm font-semibold text-stone-300">
-            {["No invasive ad trackers", "Zero algorithmic noise", "Pure human clarity"].map(t => (
+            {["No ads", "Trackers blocked", "Only you hold the key"].map(t => (
               <div key={t} className="flex items-center gap-2 bg-white/5 backdrop-blur-md px-4 py-2 rounded-full border border-white/10">
                 <span className="w-2 h-2 rounded-full bg-mint" />
                 <span>{t}</span>
@@ -301,16 +300,16 @@ export function MarketingHome() {
           <div className="max-w-3xl mx-auto text-center mb-16">
             <span className="text-xs uppercase font-extrabold tracking-widest text-forest">Engineered with Purpose</span>
             <h2 className="mt-3 text-3xl sm:text-4xl font-extrabold text-forest-night tracking-tight">Everything you need. Nothing you don&apos;t.</h2>
-            <p className="mt-3 text-stone-600 text-base sm:text-lg">Designed intentionally to replace cluttered email apps with speed, structured taxonomies, and calm elegance.</p>
+            <p className="mt-3 text-stone-600 text-base sm:text-lg">Designed to replace cluttered email apps with clear structure, quick keyboard control, and privacy you don&apos;t have to take on trust.</p>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-8 bg-white rounded-3xl sm:rounded-[32px] p-6 sm:p-8 border border-linen-border shadow-bento flex flex-col justify-between">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-linen-border">
                 <div>
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-mint-tint text-forest text-xs font-bold mb-2 border border-mint/50">01 • Intelligent Workspace</div>
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-mint-tint text-forest text-xs font-bold mb-2 border border-mint/50">01 • Focused Inbox</div>
                   <h3 className="text-2xl font-bold text-forest-night">A workspace tailored for true focus.</h3>
-                  <p className="text-sm text-stone-600 mt-1 max-w-lg">Intelligent triage separating peer conversations from automated build notifications and newsletter noise.</p>
+                  <p className="text-sm text-stone-600 mt-1 max-w-lg">Conversations with people land in Primary. Automated notifications go to Updates and mailing lists to Newsletters, sorted as mail arrives.</p>
                 </div>
                 <div className="flex items-center gap-1.5 self-start bg-linen-subtle p-1 rounded-full border border-linen-border text-xs font-bold text-forest-night">
                   <span className="px-3 py-1 bg-white rounded-full shadow-xs text-forest">Primary (12)</span>
@@ -325,7 +324,7 @@ export function MarketingHome() {
                     <span className="font-bold text-xs text-forest-night w-32 truncate">Elena Rostova</span>
                     <span className="px-2 py-0.5 rounded-sm text-[10px] font-bold bg-forest text-mint">Product</span>
                     <span className="px-2 py-0.5 rounded-sm text-[10px] font-bold bg-amber-100 text-amber-900">URGENT</span>
-                    <span className="text-xs font-semibold text-stone-800 truncate">Q3 Product Roadmap: Multi-tenant Latency Benchmarks</span>
+                    <span className="text-xs font-semibold text-stone-800 truncate">Q3 Product Roadmap: final review before launch</span>
                   </div>
                   <span className="text-xs font-mono text-stone-500 shrink-0">10:42 AM</span>
                 </div>
@@ -349,7 +348,7 @@ export function MarketingHome() {
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-xs font-medium text-stone-600">
-                {["Auto categorization", "One-tap snooze velocity", "Zero unread clutter"].map(t => <div key={t} className="flex items-center gap-2"><Check />{t}</div>)}
+                {["Automatic sorting", "One-tap snooze", "Spam kept apart"].map(t => <div key={t} className="flex items-center gap-2"><Check />{t}</div>)}
               </div>
             </div>
 
@@ -358,7 +357,7 @@ export function MarketingHome() {
               <div>
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-forest-dark text-mint text-xs font-bold mb-3 border border-mint/20">02 • Keyboard First</div>
                 <h3 className="text-2xl font-bold text-white">Commands at the speed of thought.</h3>
-                <p className="text-xs text-stone-400 mt-2 leading-relaxed">Never leave your home row. Jump anywhere instantly with global palettes and tactile shortcuts.</p>
+                <p className="text-xs text-stone-400 mt-2 leading-relaxed">Never leave your home row. Jump anywhere with the command palette and single-key shortcuts.</p>
                 <div className="mt-6 p-4 rounded-2xl bg-forest-midnight border border-forest-dark space-y-3">
                   <div className="flex items-center justify-between text-xs text-stone-300 pb-2 border-b border-forest-dark">
                     <span className="flex items-center gap-2"><Icon name="search" className="text-[16px] text-mint" /><span>Jump anywhere</span></span>
@@ -396,30 +395,30 @@ export function MarketingHome() {
 
             <div className="lg:col-span-7 bg-white rounded-3xl sm:rounded-[32px] p-6 sm:p-8 border border-linen-border shadow-bento flex flex-col justify-between">
               <div>
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-mint-tint text-forest text-xs font-bold mb-2 border border-mint/50">03 • Architectural Integrity</div>
-                <h3 className="text-2xl font-bold text-forest-night">Conversations that stay organized.</h3>
-                <p className="text-sm text-stone-600 mt-1 max-w-xl">No endless unraveling threads or broken reply chains. Mac Tidar Mail groups related documents, latency benchmarks, and architectural decisions into crystal clear timeline records.</p>
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-mint-tint text-forest text-xs font-bold mb-2 border border-mint/50">03 • Safe by Default</div>
+                <h3 className="text-2xl font-bold text-forest-night">Conversations that stay organized, and private.</h3>
+                <p className="text-sm text-stone-600 mt-1 max-w-xl">Replies stay together in one thread. Every email is shown in a locked-down frame with scripts removed and remote images held back, so senders can&apos;t track when you open it.</p>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-6">
                   <div className="p-4 rounded-2xl bg-forest-50 border border-forest/10">
-                    <span className="text-[10px] font-bold text-forest uppercase tracking-wider block">Search Latency</span>
-                    <span className="text-2xl font-extrabold text-forest-night block mt-1">&lt; 38ms</span>
-                    <span className="text-[11px] text-forest font-semibold">↘ 62% decrease</span>
+                    <span className="text-[10px] font-bold text-forest uppercase tracking-wider block">Tracking Pixels</span>
+                    <span className="text-lg font-bold text-forest-night block mt-1">Blocked</span>
+                    <span className="text-[11px] text-forest font-semibold">Remote images held back</span>
                   </div>
                   <div className="p-4 rounded-2xl bg-linen-subtle border border-linen-border">
-                    <span className="text-[10px] font-bold text-stone-500 uppercase tracking-wider block">Tenant Isolation</span>
-                    <span className="text-lg font-bold text-forest-night block mt-1">RLS + Schema</span>
-                    <span className="text-[11px] text-stone-500">Strict Organization</span>
+                    <span className="text-[10px] font-bold text-stone-500 uppercase tracking-wider block">Your Devices</span>
+                    <span className="text-lg font-bold text-forest-night block mt-1">Stay signed in</span>
+                    <span className="text-[11px] text-stone-500">Sign out of all devices anytime</span>
                   </div>
                   <div className="p-4 rounded-2xl bg-mint-tint/50 border border-mint/40">
-                    <span className="text-[10px] font-bold text-forest uppercase tracking-wider block">Offline Cache</span>
-                    <span className="text-lg font-bold text-forest block mt-1">100% Zero-Loss</span>
-                    <span className="text-[11px] text-forest font-medium">IndexedDB + CRDT</span>
+                    <span className="text-[10px] font-bold text-forest uppercase tracking-wider block">Drafts &amp; Settings</span>
+                    <span className="text-lg font-bold text-forest block mt-1">Encrypted</span>
+                    <span className="text-[11px] text-forest font-medium">In your browser, before saving</span>
                   </div>
                 </div>
               </div>
               <div className="mt-6 pt-4 border-t border-linen-border flex items-center justify-between text-xs text-stone-600">
-                <span className="font-semibold flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-forest" />Multi-tenant Vector Ingestion Pipeline</span>
-                <span className="font-mono text-forest font-bold">v3.2 Production</span>
+                <span className="font-semibold flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-forest" />Encrypted mail stored in AWS Cape Town</span>
+                <span className="font-mono text-forest font-bold">af-south-1</span>
               </div>
             </div>
           </div>
@@ -433,7 +432,7 @@ export function MarketingHome() {
           <div className="text-center max-w-3xl mx-auto mb-16 space-y-4">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-forest-dark border border-mint/20 text-mint text-xs font-mono uppercase tracking-widest">Desktop Workspace</div>
             <h2 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight">The Modern Inbox Environment</h2>
-            <p className="text-stone-300 text-base sm:text-lg">Zero clutter, instant vector search, and unified team identity under a single elegant roof.</p>
+            <p className="text-stone-300 text-base sm:text-lg">Zero clutter, quick search across your folders, and six interface skins to make it yours.</p>
           </div>
           <div className="rounded-3xl bg-forest-night border border-forest-dark/80 shadow-forest-glow p-3 sm:p-5 overflow-hidden">
             <div className="flex items-center justify-between pb-3 border-b border-forest-dark text-xs">
@@ -444,7 +443,7 @@ export function MarketingHome() {
                 <span className="ml-3 text-stone-400 font-mono text-[11px]">Inbox — Mac Tidar Mail (mail.mactidar.com)</span>
               </div>
               <div className="flex items-center gap-3 font-mono text-[11px] text-mint">
-                <span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-mint animate-pulse" />Cluster: v2.14.0 Production</span>
+                <span className="inline-flex items-center gap-1.5"><Icon name="lock" className="text-[13px]" />Zero-access encrypted</span>
               </div>
             </div>
             <div className="mt-3 rounded-2xl overflow-hidden border border-forest-dark bg-forest-midnight">
@@ -480,9 +479,8 @@ export function MarketingHome() {
                       </div>
                     ))}
                   </div>
-                  <div className="pt-4 border-t border-forest-dark text-[11px] text-stone-400 space-y-1">
-                    <div className="flex justify-between"><span>Storage</span><span className="font-mono text-mint">4.2 GB / 15 GB</span></div>
-                    <div className="w-full bg-forest-midnight h-1.5 rounded-full overflow-hidden border border-forest-dark"><div className="bg-mint h-full w-[28%] rounded-full" /></div>
+                  <div className="pt-4 border-t border-forest-dark text-[11px] text-stone-400 flex items-center gap-2">
+                    <Icon name="key" className="text-[15px] text-mint" /><span>Unlocked with your key</span>
                   </div>
                 </div>
                 <div className="col-span-12 md:col-span-9 p-4 sm:p-6 flex flex-col justify-between relative bg-forest-midnight/60">
@@ -513,7 +511,7 @@ export function MarketingHome() {
                     </div>
                     <p className="text-xs text-stone-300 font-mono leading-relaxed pt-1">
                       Hi Elena, <br /><br />
-                      Latency reduction benchmarks look extremely solid (&lt; 38ms). Let&apos;s greenlight the vector cache indexer before Thursday&apos;s sprint.
+                      The roadmap looks solid. Let&apos;s lock the launch date before Thursday&apos;s sprint review.
                     </p>
                     <div className="pt-3 flex items-center justify-between border-t border-forest-dark">
                       <div className="flex items-center gap-2 text-stone-400 text-xs font-mono">
@@ -532,8 +530,8 @@ export function MarketingHome() {
                     <div className="flex items-center gap-2.5">
                       <span className="w-7 h-7 rounded-lg bg-forest text-mint flex items-center justify-center font-bold">✓</span>
                       <div>
-                        <h5 className="font-bold text-stone-200">Inbox Zero Progress</h5>
-                        <p className="text-[11px] text-stone-400">You handled 18 priority communications today with calm velocity.</p>
+                        <h5 className="font-bold text-stone-200">End-to-end to elena@mactidar.com</h5>
+                        <p className="text-[11px] text-stone-400">Encrypted in your browser and signed before it&apos;s sent.</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3 font-mono text-[11px] text-stone-400">
@@ -549,19 +547,19 @@ export function MarketingHome() {
         </div>
       </section>
 
-      {/* ECOSYSTEM */}
-      <section className="py-24 sm:py-32 bg-linen-subtle border-b border-linen-border" id="ecosystem">
+      {/* HOW PRIVACY WORKS */}
+      <section className="py-24 sm:py-32 bg-linen-subtle border-b border-linen-border" id="privacy">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center max-w-3xl mx-auto mb-16">
-            <span className="text-xs uppercase tracking-widest font-extrabold text-forest">Unified Architecture</span>
-            <h2 className="mt-4 text-3xl sm:text-4xl font-extrabold text-forest-night tracking-tight">One account. More possibilities.</h2>
-            <p className="mt-4 text-stone-600 text-base sm:text-lg">Mac Tidar Mail is the communication backbone of a unified product suite designed for builders, creators, and modern teams.</p>
+            <span className="text-xs uppercase tracking-widest font-extrabold text-forest">Zero-Access Encryption</span>
+            <h2 className="mt-4 text-3xl sm:text-4xl font-extrabold text-forest-night tracking-tight">Your key. Your mail.</h2>
+            <p className="mt-4 text-stone-600 text-base sm:text-lg">Privacy that doesn&apos;t depend on trusting us: the server stores mail it has no way to read.</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {[
-              { icon: "mail", title: "Mac Tidar Mail", badge: "Available Now", badgeClass: "bg-mint-tint text-forest border border-mint/50", copy: "Lightweight, rapid personal and business email with built-in instant search, tags, and encrypted storage.", footer: null },
-              { icon: "cloud", title: "Mac Tidar Cloud", badge: "Connected", badgeClass: "bg-stone-100 text-stone-600", copy: "Directly attach large roadmaps, specs, and design assets from Mac Tidar Cloud with seamless permission control.", footer: "Seamless file bridge" },
-              { icon: "key", title: "Mac Tidar Account", badge: "Single Sign-On", badgeClass: "bg-mint-tint text-forest border border-mint/50", copy: "Your single passkey to all Mac Tidar experiences. Passkeys, 2FA hardware tokens, and enterprise SAML 2.0 readiness.", footer: "Integrated security" },
+              { icon: "move_to_inbox", title: "Encrypted on arrival", badge: "Inbound", badgeClass: "bg-mint-tint text-forest border border-mint/50", copy: "Mail from Gmail, Outlook or anywhere else is encrypted with your public key as soon as it arrives, and the readable copy is deleted.", footer: "Readable copy deleted" },
+              { icon: "lock_open", title: "Unlocked in your browser", badge: "Your password", badgeClass: "bg-stone-100 text-stone-600", copy: "Your password turns into your key inside your browser and is never sent to us. Mail, drafts, labels and settings are only readable there.", footer: null },
+              { icon: "key", title: "Recovery you control", badge: "Recovery file", badgeClass: "bg-mint-tint text-forest border border-mint/50", copy: "You save a recovery file when you sign up. Lose your password and it, or a device you're signed in on, brings your old mail back. We can't.", footer: "No backdoor" },
             ].map(card => (
               <div key={card.title} className="bg-white rounded-3xl p-8 border border-linen-border shadow-bento hover:border-mint transition-all group flex flex-col justify-between">
                 <div>
@@ -578,7 +576,7 @@ export function MarketingHome() {
                   <div className="text-sm font-semibold text-stone-500 flex items-center gap-2 pt-4 border-t border-linen-border"><Check tone="mint" /><span>{card.footer}</span></div>
                 ) : (
                   <Link className="text-sm font-bold text-forest group-hover:text-forest-deep flex items-center gap-1.5 pt-4 border-t border-linen-border" href={APP_URL}>
-                    <span>Access web app</span>
+                    <span>Open your mailbox</span>
                     <Icon name="arrow_forward" className="text-base group-hover:translate-x-1 transition-transform" />
                   </Link>
                 )}
@@ -595,10 +593,10 @@ export function MarketingHome() {
             <div className="lg:col-span-5 lg:sticky lg:top-32">
               <span className="text-xs uppercase tracking-widest font-extrabold text-forest">The Core Standard</span>
               <h2 className="mt-6 text-3xl sm:text-4xl font-extrabold text-forest-night tracking-tight leading-snug sm:leading-10">Technology should make life easier. Not more complicated.</h2>
-              <p className="mt-6 text-stone-600 leading-relaxed text-base sm:text-lg sm:leading-7">We built Mac Tidar Mail because modern communication became noisy, slow, and overwhelming. Here is what we refuse to compromise on:</p>
+              <p className="mt-6 text-stone-600 leading-relaxed text-base sm:text-lg sm:leading-7">We built Mac Tidar Mail because email became noisy, overwhelming, and far too easy to read by everyone but you. Here is what we refuse to compromise on:</p>
               <div className="mt-6 p-6 rounded-3xl bg-forest-50 border border-forest/15 space-y-3">
                 <div className="flex items-center gap-2 text-forest font-bold text-sm"><Icon name="verified_user" className="text-lg" /><span>Our Privacy Pledge</span></div>
-                <p className="text-xs text-forest-deep leading-relaxed">We never scan your private messages for advertising. Your communications are encrypted at rest and in transit across all endpoints.</p>
+                <p className="text-xs text-forest-deep leading-relaxed">We don&apos;t show ads and we can&apos;t scan your mail: it&apos;s stored encrypted with a key only you hold, and it travels over encrypted connections.</p>
               </div>
             </div>
             <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -620,17 +618,17 @@ export function MarketingHome() {
           <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full bg-mint/20 blur-3xl pointer-events-none" />
           <div className="absolute -bottom-32 -left-32 w-96 h-96 rounded-full bg-forest/50 blur-3xl pointer-events-none" />
           <div className="relative z-10 max-w-3xl mx-auto space-y-8">
-            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-forest-night/80 border border-mint/40 text-mint text-xs font-mono uppercase tracking-widest">Official @mactidar.com Identity</div>
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-forest-night/80 border border-mint/40 text-mint text-xs font-mono uppercase tracking-widest">Your own @mactidar.com address</div>
             <h2 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-tight sm:leading-none text-white">A better inbox is waiting.</h2>
             <p className="text-lg sm:text-xl text-stone-200 max-w-2xl mx-auto font-normal leading-relaxed sm:leading-7">
-              Your conversations deserve a tranquil home. Discover a simpler, more beautiful way to communicate with an authentic <span className="text-mint font-bold">@mactidar.com</span> address.
+              Your conversations deserve a private home. Discover a simpler, calmer way to communicate with your own <span className="text-mint font-bold">@mactidar.com</span> address.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
               <Link className="w-full sm:w-auto px-8 py-4 rounded-full bg-mint hover:bg-mint-soft text-forest-night font-bold text-base shadow-xl hover:shadow-mint-glow transition-all hover:-translate-y-0.5" href={SIGN_UP_URL}>Create Your Account</Link>
               <Link className="w-full sm:w-auto px-8 py-4 rounded-full bg-forest-midnight/60 hover:bg-forest-midnight text-white border border-mint/30 font-semibold text-base transition-all" href={SIGN_IN_URL}>Sign In to Webmail</Link>
             </div>
             <div className="pt-6 flex flex-wrap items-center justify-center gap-6 text-xs text-mint/80 font-medium">
-              <span>Instant setup</span><span>•</span><span>Free tier available</span><span>•</span><span>Cancel anytime</span>
+              <span>Free</span><span>•</span><span>No ads</span><span>•</span><span>Only you hold the key</span>
             </div>
           </div>
         </div>
@@ -642,7 +640,7 @@ export function MarketingHome() {
           <div className="text-center mb-16">
             <span className="text-xs uppercase tracking-widest font-extrabold text-forest">Got Questions?</span>
             <h2 className="mt-3 text-3xl sm:text-4xl font-extrabold text-forest-night tracking-tight">Frequently Asked Questions</h2>
-            <p className="mt-3 text-stone-600 text-base">Everything you need to know about Mac Tidar Mail and our suite ecosystem.</p>
+            <p className="mt-3 text-stone-600 text-base">Everything you need to know about Mac Tidar Mail and how it keeps your mail private.</p>
           </div>
           <div className="space-y-4">
             {faqs.map(([q, a]) => (
@@ -666,45 +664,37 @@ export function MarketingHome() {
           <div className="grid grid-cols-1 md:grid-cols-12 gap-10 pb-12 border-b border-forest-dark">
             <div className="md:col-span-5 space-y-4">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-forest text-mint flex items-center justify-center font-bold"><Icon name="mail" className="text-base" /></div>
+                <BrandMark className="h-8" />
                 <span className="text-base font-bold text-white tracking-tight">Mac Tidar Mail</span>
-                <span className="text-[10px] font-bold uppercase bg-forest-night text-mint px-2 py-0.5 rounded-full border border-mint/20">Suite</span>
               </div>
-              <p className="text-sm text-stone-400 max-w-sm leading-relaxed">The next-generation communication layer built with craft, privacy, and speed for high-performing product teams.</p>
+              <p className="text-sm text-stone-400 max-w-sm leading-relaxed">Zero-access encrypted email with your own @mactidar.com address, built with craft and privacy first.</p>
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-forest-night border border-forest-dark text-xs font-mono text-mint">
-                <span className="w-2 h-2 rounded-full bg-mint animate-pulse" />
-                <span>All systems operational @ mail.mactidar.com</span>
+                <Icon name="lock" className="text-[14px]" />
+                <span>Only you hold the key</span>
               </div>
             </div>
             <div className="md:col-span-2 space-y-3 text-xs">
               <h4 className="font-bold text-stone-200 uppercase tracking-wider">Product</h4>
               <ul className="space-y-2">
-                <li><a className="hover:text-mint transition-colors" href="#features">Bento Suite</a></li>
-                <li><a className="hover:text-mint transition-colors" href="#workspace">Desktop App</a></li>
-                <li><Link className="hover:text-mint transition-colors" href={APP_URL}>Web Client</Link></li>
-                <li><a className="hover:text-mint transition-colors" href="#ecosystem">Mac Tidar Suite</a></li>
-                <li><a className="hover:text-mint transition-colors" href="#faqs">Changelog (v2.14)</a></li>
+                <li><a className="hover:text-mint transition-colors" href="#features">Features</a></li>
+                <li><a className="hover:text-mint transition-colors" href="#workspace">Workspace</a></li>
+                <li><a className="hover:text-mint transition-colors" href="#privacy">Privacy</a></li>
+                <li><a className="hover:text-mint transition-colors" href="#faqs">FAQs</a></li>
               </ul>
             </div>
             <div className="md:col-span-2 space-y-3 text-xs">
-              <h4 className="font-bold text-stone-200 uppercase tracking-wider">Ecosystem</h4>
+              <h4 className="font-bold text-stone-200 uppercase tracking-wider">Account</h4>
               <ul className="space-y-2">
-                {["Mac Tidar Cloud", "Mac Tidar Account", "Enterprise SAML", "Security & SOC-2"].map(t => <li key={t}><a className="hover:text-mint transition-colors" href="#">{t}</a></li>)}
-              </ul>
-            </div>
-            <div className="md:col-span-3 space-y-3 text-xs">
-              <h4 className="font-bold text-stone-200 uppercase tracking-wider">Legal &amp; Trust</h4>
-              <ul className="space-y-2">
-                {["Privacy Policy", "Terms of Service", "Data Processing Addendum", "Responsible Disclosure"].map(t => <li key={t}><a className="hover:text-mint transition-colors" href="#">{t}</a></li>)}
+                <li><Link className="hover:text-mint transition-colors" href={SIGN_UP_URL}>Create an account</Link></li>
+                <li><Link className="hover:text-mint transition-colors" href={SIGN_IN_URL}>Sign in</Link></li>
               </ul>
             </div>
           </div>
           <div className="pt-8 flex flex-col sm:flex-row items-center justify-between text-xs text-stone-500 gap-4">
-            <p>© 2025 Mac Tidar Technologies Inc. All rights reserved.</p>
+            <p>© {new Date().getFullYear()} Mac Tidar Technologies. All rights reserved.</p>
             <div className="flex items-center gap-6">
-              <span className="hover:text-mint cursor-pointer">Security Audited</span>
-              <span className="hover:text-mint cursor-pointer">End-to-End Encrypted</span>
-              <span className="hover:text-mint cursor-pointer">English (US)</span>
+              <span>Zero-access encrypted</span>
+              <span>English (US)</span>
             </div>
           </div>
         </div>

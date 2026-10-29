@@ -242,7 +242,6 @@ export function ShortcutBar() {
           </span>
         ))}
       </div>
-      <span className="hidden lg:inline-flex items-center gap-1 text-[11px] font-medium text-m-muted whitespace-nowrap"><span className="w-1.5 h-1.5 rounded-full bg-m-success" />Mac Tidar Production Cluster · v2.14.0</span>
     </div>
   );
 }

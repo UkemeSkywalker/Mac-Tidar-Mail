@@ -1,6 +1,7 @@
 "use client";
 
 import { folderMatch, useMail } from "./store";
+import { BrandMark } from "../brand";
 import { Icon, labelDot } from "./ui";
 
 const mailboxes: [string, string, string][] = [
@@ -24,9 +25,8 @@ export function Sidebar() {
       <aside className={`fixed left-0 top-0 h-dvh w-64 bg-m-sb border-r border-m-sb-line flex flex-col z-50 shadow-[0_1px_8px_rgba(0,0,0,0.04)] transition-transform ${collapsed ? "lg:-translate-x-full" : "lg:translate-x-0"} ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="h-14 px-gutter flex items-center justify-between">
           <button type="button" onClick={() => setFolder("inbox")} className="flex items-center gap-space-sm min-w-0 text-left" title="Inbox">
-            <span className="w-8 h-8 rounded-m-xl bg-m-sb-cta text-m-sb-cta-text flex items-center justify-center shrink-0"><Icon name="mail" className="text-[18px]" /></span>
+            <BrandMark className="h-7" />
             <span className="t-headline-sm text-m-sb-strong truncate tracking-tight">Mac Tidar Mail</span>
-            <span className="px-space-xs py-0.5 rounded-m-pill bg-m-suite text-m-suite-text t-label-sm uppercase tracking-wide">Suite</span>
           </button>
         </div>
 
@@ -76,12 +76,9 @@ export function Sidebar() {
           </div>
         </div>
 
-        <button type="button" onClick={() => setDialog({ kind: "settings", tab: "Storage" })} className="p-gutter bg-m-sb-footer text-left hover:brightness-105">
-          <span className="flex items-center justify-between mb-space-xs">
-            <span className="t-label-sm text-m-sb-muted">Storage</span>
-            <span className="t-label-sm text-m-sb-strong font-medium">4.2 GB / 15 GB (28%)</span>
-          </span>
-          <span className="block w-full h-1.5 bg-m-sb-track rounded-full overflow-hidden"><span className="block h-full w-[28%] bg-m-sb-cta rounded-full" /></span>
+        <button type="button" onClick={() => setDialog({ kind: "settings", tab: "About" })} className="p-gutter bg-m-sb-footer text-left hover:brightness-105 flex items-center gap-space-sm">
+          <Icon name="lock" className="text-[16px] text-m-sb-muted" />
+          <span className="t-label-sm text-m-sb-muted">Zero-access encrypted · only you hold the key</span>
         </button>
       </aside>
     </>

@@ -9,6 +9,7 @@ import {
   createIndexedDbDeviceStore, InvalidRecoveryCodeError, lockedKeyCount, NoDeviceSessionError, resetMailboxKeys, resumeMailbox, setupMailboxKeys, startAutoLock, unlockMailbox, WrongPasswordError,
   type DeviceKeyStore, type MailboxKeyState, type MailboxSession,
 } from "../crypto";
+import { BrandMark } from "../../brand";
 import { Icon } from "../ui";
 import { ApiError, mailApi, type ServerMailbox } from "./api";
 import { COUNTRIES } from "./countries";
@@ -106,7 +107,7 @@ function Shell({ children, title, subtitle }: { children: ReactNode; title: stri
     <div className="min-h-dvh grid place-items-center bg-m-canvas p-4">
       <div className="w-full max-w-md bg-m-card rounded-m-xl shadow-xl border border-m-line p-space-xl">
         <div className="flex items-center gap-3 mb-6">
-          <span className="w-10 h-10 rounded-m-xl bg-m-brand text-m-on-brand flex items-center justify-center"><Icon name="mail" className="text-[20px]" /></span>
+          <BrandMark className="h-10" />
           <div><b className="t-headline-sm text-m-text block">Mac Tidar Mail</b><span className="t-label-sm text-m-muted">Zero-access encrypted</span></div>
         </div>
         <h1 className="t-headline-lg text-m-text">{title}</h1>
