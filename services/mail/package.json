@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "build": "node scripts/build.mjs",
     "reserve": "tsx scripts/reserve-address.ts",
+    "reset-mfa": "tsx scripts/reset-mfa.ts",
     "read-latest": "tsx scripts/read-latest.ts",
     "audit-plaintext": "tsx scripts/audit-plaintext.ts",
     "redrive": "tsx scripts/redrive-inbound.ts"

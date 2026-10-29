@@ -9,7 +9,8 @@ import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyStructured
 import { normalizeAddress } from "../crypto/keys";
 import { SESv2Client } from "@aws-sdk/client-sesv2";
 import { randomBytes } from "node:crypto";
-import { AdminGetUserCommand, CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-provider";
+import { AdminGetUserCommand, AdminSetUserMFAPreferenceCommand, CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-provider";
+import { deviceName, sesAlerts, type AlertContext, type SecurityEvent, type SendAlert } from "../shared/alerts";
 import { draftSk, folderGsi1, mailboxPk, META_SK, ownerGsi1, SETTINGS_SK, type DraftItem, type Folder, type MailboxMeta, type MessageItem, type SettingsItem } from "../shared/table";
 import { Conflict as SendConflict, sendMessage } from "./send";
 import { validateSend } from "./send-validate";
@@ -30,9 +31,16 @@ interface SessionItem { pk: string; sk: string; gsi1pk: string; gsi1sk: string; 
 export interface ApiConfig { table: string; bucket: string; configurationSet: string; localDomains: string[]; region: string; signupDomain: string }
 /** The parts of a Mail account the API needs (read from the user pool). */
 export interface AccountInfo { sub: string; email: string; emailVerified: boolean; givenName: string; familyName: string }
+/** Which two-step verification methods an account has on. */
+export interface MfaState { totp: boolean; email: boolean }
+export interface MfaStore { get(username: string): Promise<MfaState>; set(username: string, next: MfaState): Promise<void> }
 export interface ApiDeps {
   ddb: DynamoDBDocumentClient; s3: S3Client; ses: SESv2Client; config: ApiConfig;
   account: (username: string) => Promise<AccountInfo | null>;
+  /** Two-step verification settings in the user pool. */
+  mfa?: MfaStore;
+  /** Emails the backup address about a security change. Defaults to doing nothing (tests). */
+  alert?: SendAlert;
   presign?: (s3: S3Client, cmd: GetObjectCommand) => Promise<string>;
 }
 type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
@@ -74,8 +82,23 @@ function parseBody(event: Event, maxChars = 600_000): unknown {
   catch { throw new BadRequest("Body must be JSON"); }
 }
 
-export function createHandler({ ddb, s3, ses, config, account, presign = (c, cmd) => getSignedUrl(c, cmd, { expiresIn: 300 }) }: ApiDeps) {
+export function createHandler({ ddb, s3, ses, config, account, mfa, alert = async () => {}, presign = (c, cmd) => getSignedUrl(c, cmd, { expiresIn: 300 }) }: ApiDeps) {
   const T = config.table;
+
+  /** The caller's address: their username in the Mail user pool. */
+  function usernameOf(event: Event): string {
+    const u = event.requestContext.authorizer?.jwt?.claims?.username;
+    if (typeof u !== "string" || !u) throw new BadRequest("This account has no Mac Tidar address");
+    return u;
+  }
+
+  /** Emails the account's backup address about a change it made (or someone made as it). */
+  async function alertAccount(event: Event, username: string, what: SecurityEvent) {
+    const acct = await account(username).catch(() => null);
+    if (!acct?.email || !acct.emailVerified) return;
+    const ctx: AlertContext = { address: username, at: new Date(), ip: event.requestContext.http?.sourceIp, device: deviceName(event.requestContext.http?.userAgent) };
+    await alert(acct.email, what, ctx);
+  }
 
   async function ownedMailbox(sub: string, raw: string | undefined): Promise<MailboxMeta> {
     let address: string;
@@ -109,8 +132,7 @@ export function createHandler({ ddb, s3, ses, config, account, presign = (c, cmd
         // Opens the mailbox for the signed-in account's own address (its username). One per
         // account; the OWNER#…/CLAIM marker makes that atomic. A reserved address (for example an
         // existing mailbox moving to its own login) needs a reservation for this backup email.
-        const username = event.requestContext.authorizer?.jwt?.claims?.username;
-        if (typeof username !== "string") throw new BadRequest("This account has no Mac Tidar address");
+        const username = usernameOf(event);
         const { address, reserved } = parseAddress(username, config.signupDomain);
         const { Items = [] } = await ddb.send(new QueryCommand({ TableName: T, IndexName: "gsi1", KeyConditionExpression: "gsi1pk = :o", ExpressionAttributeValues: { ":o": ownerGsi1(sub) }, Limit: 1 }));
         if (Items.length) throw new Conflict("This account already has a mailbox");
@@ -348,7 +370,41 @@ export function createHandler({ ddb, s3, ses, config, account, presign = (c, cmd
           start = page.LastEvaluatedKey;
         } while (start);
         console.log(JSON.stringify({ event: "sessions-revoked", deleted }));
+        // The sessions are already gone; the alert is best-effort on top.
+        const username = event.requestContext.authorizer?.jwt?.claims?.username;
+        if (typeof username === "string" && username) await alertAccount(event, username, "signed-out-everywhere");
         return json(200, { deleted });
+      }
+
+      // ── Two-step verification ─────────────────────────────────────────────────────────
+      // Changes go through here (not straight from the browser to Cognito) so every change
+      // emails the backup address. The authenticator secret itself is set up browser-to-Cognito
+      // and never passes through us; this only switches methods on and off.
+      case "GET /v1/account/mfa": {
+        if (!mfa) throw new NotFound();
+        return json(200, await mfa.get(usernameOf(event)));
+      }
+
+      case "PUT /v1/account/mfa": {
+        if (!mfa) throw new NotFound();
+        const username = usernameOf(event);
+        const body = (parseBody(event, 200) ?? {}) as Record<string, unknown>;
+        const keys = Object.keys(body);
+        if (!keys.length || keys.some(k => (k !== "totp" && k !== "email") || typeof body[k] !== "boolean")) throw new BadRequest("Send totp and/or email as true or false");
+        const cur = await mfa.get(username);
+        const next: MfaState = { totp: (body.totp as boolean | undefined) ?? cur.totp, email: (body.email as boolean | undefined) ?? cur.email };
+        try {
+          await mfa.set(username, next);
+        } catch (e) {
+          if ((e as Error).name === "InvalidParameterException") throw new BadRequest(next.totp && !cur.totp ? "Finish setting up your authenticator app first" : "That change isn't possible for this account");
+          throw e;
+        }
+        const changes: SecurityEvent[] = [];
+        if (next.totp !== cur.totp) changes.push(next.totp ? "totp-on" : "totp-off");
+        if (next.email !== cur.email) changes.push(next.email ? "email-mfa-on" : "email-mfa-off");
+        for (const c of changes) await alertAccount(event, username, c);
+        console.log(JSON.stringify({ event: "mfa-updated", changes }));
+        return json(200, next);
       }
 
       default:
@@ -397,18 +453,40 @@ async function poolAccount(cognito: CognitoIdentityProviderClient, poolId: strin
   }
 }
 
+/** MFA settings through the admin API: AdminSetUserMFAPreference never needs the user's own token. */
+function poolMfa(cognito: CognitoIdentityProviderClient, poolId: string): MfaStore {
+  return {
+    async get(username) {
+      const u = await cognito.send(new AdminGetUserCommand({ UserPoolId: poolId, Username: username }));
+      const on = new Set(u.UserMFASettingList ?? []);
+      return { totp: on.has("SOFTWARE_TOKEN_MFA"), email: on.has("EMAIL_OTP") };
+    },
+    async set(username, next) {
+      await cognito.send(new AdminSetUserMFAPreferenceCommand({
+        UserPoolId: poolId, Username: username,
+        // With both on, neither is "preferred": Cognito then asks which to use, the app picks the
+        // authenticator, and "send a code to my backup email instead" stays possible.
+        SoftwareTokenMfaSettings: { Enabled: next.totp, PreferredMfa: next.totp && !next.email },
+        EmailMfaSettings: { Enabled: next.email, PreferredMfa: next.email && !next.totp },
+      }));
+    },
+  };
+}
+
 let cached: ReturnType<typeof createHandler> | undefined;
 export const handler = (event: Event) => {
-  cached ??= createHandler({
-    account: (cognito => (username: string) => poolAccount(cognito, env("MAIL_USER_POOL_ID"), username))(new CognitoIdentityProviderClient({})),
+  cached ??= ((cognito, ses) => createHandler({
+    account: username => poolAccount(cognito, env("MAIL_USER_POOL_ID"), username),
+    mfa: poolMfa(cognito, env("MAIL_USER_POOL_ID")),
+    alert: sesAlerts(ses, env("SIGNUP_DOMAIN").trim().toLowerCase()),
     ddb: DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } }),
     s3: new S3Client({}),
-    ses: new SESv2Client({}),
+    ses,
     config: {
       table: env("MAIL_TABLE"), bucket: env("MAIL_BUCKET"), configurationSet: env("SES_CONFIGURATION_SET"), region: env("AWS_REGION"),
       localDomains: env("LOCAL_MAIL_DOMAINS").split(",").map(d => d.trim().toLowerCase()),
       signupDomain: env("SIGNUP_DOMAIN").trim().toLowerCase(),
     },
-  });
+  }))(new CognitoIdentityProviderClient({}), new SESv2Client({}));
   return cached(event);
 };

@@ -11,6 +11,7 @@ import {
 } from "../crypto";
 import { BrandMark } from "../../brand";
 import { Icon } from "../ui";
+import { cleanCode, nextForStep, type MfaMethod } from "./mfa";
 import { ApiError, mailApi, type ServerMailbox } from "./api";
 import { COUNTRIES } from "./countries";
 import { configureAuth, confirmResetPassword, confirmSignIn, confirmSignUp, getCurrentUser, keepSignedIn, resendSignUpCode, resetPassword, sessionRef, setKeepSignedIn, signIn, signOut, signUp } from "./auth";
@@ -39,7 +40,7 @@ export function useLiveSession(): LiveSession {
 }
 
 type Stage =
-  | { s: "signin"; error?: string } | { s: "totp"; error?: string } | { s: "newPassword"; error?: string }
+  | { s: "signin"; error?: string } | { s: "totp"; canEmail: boolean; error?: string } | { s: "emailCode"; destination?: string; error?: string } | { s: "newPassword"; error?: string }
   | { s: "forgot"; error?: string } | { s: "forgotCode"; error?: string } | { s: "working"; label: string }
   | { s: "signup"; error?: string } | { s: "confirmSignup"; error?: string; info?: string }
   | { s: "pick"; mailboxes: ServerMailbox[] } | { s: "switch"; mailboxes: ServerMailbox[]; error?: string }
@@ -299,21 +300,36 @@ export function LiveGate({ children }: { children: ReactNode }) {
 
   const run = (fn: () => Promise<void>, back: (error: string) => Stage) => fn().catch(e => setStage(back(e instanceof ApiError || e instanceof Error ? errorText(e) : "Something went wrong.")));
 
-  async function doSignIn(pw: string) {
+  // `want` picks the two-step method when both are on; "EMAIL" restarts sign-in to send a fresh email code.
+  async function doSignIn(pw: string, want: MfaMethod = "TOTP") {
     password.current = pw;
-    setStage({ s: "working", label: "Signing in…" });
+    setStage({ s: "working", label: want === "EMAIL" ? "Sending a code…" : "Signing in…" });
     const username = toUsername(address);
-    const res = await signIn({ username, password: pw });
-    const step = res.nextStep.signInStep;
-    if (step === "DONE") return afterSignIn();
-    if (step === "CONFIRM_SIGN_IN_WITH_TOTP_CODE") return setStage({ s: "totp" });
-    if (step === "CONFIRM_SIGN_IN_WITH_NEW_PASSWORD_REQUIRED") return setStage({ s: "newPassword" });
-    if (step === "CONFIRM_SIGN_UP") {
-      await resendSignUpCode({ username });
-      return setStage({ s: "confirmSignup", info: "Your account isn’t verified yet. We’ve sent a new code to your backup email." });
+    let next = nextForStep((await signIn({ username, password: pw })).nextStep, want);
+    if (next.do === "choose") {
+      const canEmail = next.canEmail;
+      next = nextForStep((await confirmSignIn({ challengeResponse: next.pick })).nextStep, want, canEmail);
     }
-    if (step === "RESET_PASSWORD") return setStage({ s: "forgot", error: "Your password must be reset before you can sign in." });
-    throw new Error("This account can’t sign in yet. Please contact support.");
+    switch (next.do) {
+      case "done": return afterSignIn();
+      case "totp": return setStage({ s: "totp", canEmail: next.canEmail });
+      case "emailCode": return setStage({ s: "emailCode", destination: next.destination });
+      case "newPassword": return setStage({ s: "newPassword" });
+      case "confirmSignup":
+        await resendSignUpCode({ username });
+        return setStage({ s: "confirmSignup", info: "Your account isn’t verified yet. We’ve sent a new code to your backup email." });
+      case "reset": return setStage({ s: "forgot", error: "Your password must be reset before you can sign in." });
+      default: throw new Error("This account can’t sign in yet. Please contact support.");
+    }
+  }
+
+  // A two-step code: wrong codes stay on the screen; an expired sign-in (3 minutes) starts over.
+  function confirmMfaCode(raw: string, back: (error: string) => Stage) {
+    run(async () => {
+      const r = await confirmSignIn({ challengeResponse: cleanCode(raw) });
+      if (r.nextStep.signInStep !== "DONE") throw new Error("Verification incomplete");
+      await afterSignIn();
+    }, error => error === "Incorrect address or password." ? { s: "signin", error: "That sign-in timed out. Please sign in again." } : back(error));
   }
 
   const lock = useCallback(() => {
@@ -480,13 +496,32 @@ export function LiveGate({ children }: { children: ReactNode }) {
           <Link onClick={() => setStage({ s: "signup" })}>Back</Link>
         </div>
       </Shell>);
-    case "totp":
+    case "totp": {
+      const canEmail = stage.canEmail;
       return wrap(<Shell title="Two-step verification" subtitle="Enter the 6-digit code from your authenticator app.">
-        <form className="space-y-4" onSubmit={e => { const f = form(e); run(async () => { const r = await confirmSignIn({ challengeResponse: field(f, "code").trim() }); if (r.nextStep.signInStep !== "DONE") throw new Error("Verification incomplete"); await afterSignIn(); }, error => ({ s: "totp", error })); }}>
-          <Field label="Code" name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" required />
+        <form className="space-y-4" onSubmit={e => { const f = form(e); confirmMfaCode(field(f, "code"), error => ({ s: "totp", canEmail, error: error.replace("Check the latest email and try again.", "Check your authenticator app and try again.") })); }}>
+          <Field label="Code" name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,7}" required />
           <ErrorLine text={stage.error} /><Primary type="submit">Verify</Primary>
         </form>
+        <div className="flex justify-between gap-3">
+          {canEmail ? <Link onClick={() => run(() => doSignIn(password.current, "EMAIL"), error => ({ s: "totp", canEmail, error }))}>Send a code to my backup email instead</Link> : <span />}
+          <Link onClick={() => { void signOut().catch(() => {}); setStage({ s: "signin" }); }}>Cancel</Link>
+        </div>
       </Shell>);
+    }
+    case "emailCode": {
+      const destination = stage.destination;
+      return wrap(<Shell title="Two-step verification" subtitle={`We sent a 6-digit code to your backup email${destination ? ` (${destination})` : ""}. It expires in a few minutes.`}>
+        <form className="space-y-4" onSubmit={e => { const f = form(e); confirmMfaCode(field(f, "code"), error => ({ s: "emailCode", destination, error })); }}>
+          <Field label="Code" name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,7}" required />
+          <ErrorLine text={stage.error} /><Primary type="submit">Verify</Primary>
+        </form>
+        <div className="flex justify-between gap-3">
+          <Link onClick={() => run(() => doSignIn(password.current, "EMAIL"), error => ({ s: "emailCode", destination, error }))}>Send a new code</Link>
+          <Link onClick={() => { void signOut().catch(() => {}); setStage({ s: "signin" }); }}>Cancel</Link>
+        </div>
+      </Shell>);
+    }
     case "newPassword":
       return wrap(<Shell title="Choose a new password" subtitle="Your account needs a new password before first use.">
         <form className="space-y-4" onSubmit={e => { const f = form(e); run(async () => { const pw = field(f, "password"); password.current = pw; const r = await confirmSignIn({ challengeResponse: pw }); if (r.nextStep.signInStep !== "DONE") throw new Error("Sign-in incomplete"); await afterSignIn(); }, error => ({ s: "newPassword", error })); }}>

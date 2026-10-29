@@ -44,6 +44,8 @@ locals {
     "GET /v1/sessions/{id}/key",
     "DELETE /v1/sessions/{id}",
     "DELETE /v1/sessions",
+    "GET /v1/account/mfa",
+    "PUT /v1/account/mfa",
   ]
 }
 
@@ -124,8 +126,8 @@ data "aws_iam_policy_document" "api" {
     resources = [var.ws_manage_arn]
   }
   statement {
-    sid       = "ReadMailAccountForMailboxClaim"
-    actions   = ["cognito-idp:AdminGetUser"]
+    sid       = "ReadMailAccountAndSetMfa"
+    actions   = ["cognito-idp:AdminGetUser", "cognito-idp:AdminSetUserMFAPreference"]
     resources = [var.user_pool_arn]
   }
   statement {

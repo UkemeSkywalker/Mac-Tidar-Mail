@@ -58,6 +58,7 @@ const faqs: [string, ReactNode][] = [
   ["Will my email address end in @mactidar.com?", <>Yes. Every account gets a <strong className="text-forest">yourname@mactidar.com</strong> address, and that address is how you sign in. Your backup email is only used to reset your password; you can&apos;t sign in with it.</>],
   ["What happens if I forget my password?", "Reset it with a code sent to your backup email. Because only your password unlocks your key, older mail then needs your recovery file (made when you create your account) or a device where you're still signed in. Mac Tidar can't recover it for you, which is the point."],
   ["Can Mac Tidar read my email?", "No. Mail from outside is encrypted with your key the moment it arrives and the readable copy is deleted. Your drafts, labels and settings are encrypted in your browser. Mail between Mac Tidar addresses is encrypted in the sender's browser and signed, end to end."],
+  ["Can I turn on two-step verification?", "Yes, and it's optional. In Settings, Security you can add an authenticator app (recommended), email codes to your backup address, or both. We email your backup address whenever two-step verification changes, your password is reset, or you sign out of all devices."],
   ["Can I use Mac Tidar Mail on my phone?", "Yes, in your phone's browser at mail.mactidar.com. The layout adapts to small screens. Native apps aren't available yet."],
 ];
 
