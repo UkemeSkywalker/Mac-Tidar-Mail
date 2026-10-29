@@ -230,7 +230,7 @@ export function ConversationView({ thread }: { thread: string }) {
               </div>
             </div>
             <p className="t-body-sm text-m-muted flex flex-wrap items-center gap-1.5">
-              <Icon name="lock" className="text-[15px]" /><span>End-to-end encrypted thread via Mac Tidar Enterprise Rail</span><span>•</span><span>Thread ID: #MTR-{(9042 + [...thread].reduce((a, c) => a + c.charCodeAt(0), 0) % 900)}</span>
+              <Icon name="lock" className="text-[15px]" /><span>Stored encrypted with your key · only you can read this conversation</span>
             </p>
           </div>
           <div className="flex items-center gap-1 self-start md:self-auto">

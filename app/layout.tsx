@@ -8,11 +8,11 @@ const jakarta = Plus_Jakarta_Sans({ subsets: ["latin"], weight: ["300", "400", "
 const jetbrains = JetBrains_Mono({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-jetbrains" });
 
 export const metadata: Metadata = {
-  title: "Mac Tidar Mail — Organic Speed & Human Connection",
-  description: "Meet email that feels refreshingly simple. Built for speed, deep focus, and elegant teamwork across the Mac Tidar Suite.",
+  title: "Mac Tidar Mail — Private, Zero-Access Encrypted Email",
+  description: "Calm, simple email with your own @mactidar.com address. Your mail is encrypted with a key only you hold, so only you can read it.",
   openGraph: {
-    title: "Mac Tidar Mail — Organic Speed & Human Connection",
-    description: "Meet email that feels refreshingly simple. Built for speed, deep focus, and elegant teamwork across the Mac Tidar Suite.",
+    title: "Mac Tidar Mail — Private, Zero-Access Encrypted Email",
+    description: "Calm, simple email with your own @mactidar.com address. Your mail is encrypted with a key only you hold, so only you can read it.",
     type: "website",
   },
 };

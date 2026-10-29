@@ -1,9 +1,9 @@
-// Builds the web logo assets from designs/MacTidar Mail logos/. Run: node scripts/brand-assets.cjs
+// Builds the web logo assets from designs/MacTidar Mail logos/. Run: node scripts/brand-assets.mjs
 // (sharp comes with Next.js, so there is nothing extra to install.)
 // Cleans the neon-green fringe left around the transparent logo, then writes the mark, the
 // horizontal logo, and the favicon set (app/icon.png, app/apple-icon.png, app/favicon.ico).
-const fs = require("fs");
-const sharp = require("sharp");
+import fs from "node:fs";
+import sharp from "sharp";
 
 const SRC = "designs/MacTidar Mail logos/MacTidar Mail Logo_transparent_bg.png";
 const MARK_MAX_X = 880; // the M mark sits left of this column; the wordmark sits right of it
