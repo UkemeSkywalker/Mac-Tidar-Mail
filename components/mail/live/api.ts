@@ -50,6 +50,9 @@ export const mailApi = {
   sessionKey: (id: string) => call<{ clientKey: string }>("GET", `/v1/sessions/${encodeURIComponent(id)}/key`).then(r => r.clientKey),
   endSession: (id: string) => call<{ deleted: boolean }>("DELETE", `/v1/sessions/${encodeURIComponent(id)}`),
   endAllSessions: () => call<{ deleted: number }>("DELETE", "/v1/sessions"),
+  /** Two-step verification methods that are on. Changes email the backup address. */
+  mfa: () => call<{ totp: boolean; email: boolean }>("GET", "/v1/account/mfa"),
+  setMfa: (change: { totp?: boolean; email?: boolean }) => call<{ totp: boolean; email: boolean }>("PUT", "/v1/account/mfa", change),
   saveKeys: (address: string, keyState: MailboxKeyState, expectedVersion: number) => call<{ keyVersion: number }>("PUT", `${mb(address)}/keys`, { keyState, expectedVersion }),
   async listFolder(address: string, folder: ServerFolder): Promise<ServerMessage[]> {
     const out: ServerMessage[] = [];

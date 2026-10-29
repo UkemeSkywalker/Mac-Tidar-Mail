@@ -41,7 +41,13 @@ resource "aws_sesv2_email_identity_policy" "cognito" {
 resource "aws_cognito_user_pool" "mail" {
   name                = "mactidar-mail-users"
   deletion_protection = "ACTIVE"
-  mfa_configuration   = "OFF"
+  # Two-step verification is optional: each user turns on an authenticator app and/or email codes.
+  mfa_configuration = "OPTIONAL"
+  software_token_mfa_configuration { enabled = true }
+  email_mfa_configuration {
+    subject = "Your Mac Tidar Mail sign-in code"
+    message = "Your Mac Tidar Mail sign-in code is {####}. If you didn't just try to sign in, change your password."
+  }
 
   username_configuration { case_sensitive = false }
   auto_verified_attributes = ["email"]
@@ -91,7 +97,10 @@ resource "aws_cognito_user_pool" "mail" {
     }
   }
 
-  lambda_config { pre_sign_up = aws_lambda_function.auth.arn }
+  lambda_config {
+    pre_sign_up       = aws_lambda_function.auth.arn
+    post_confirmation = aws_lambda_function.auth.arn # security alert after a password reset
+  }
 
   depends_on = [aws_sesv2_email_identity_policy.cognito]
 
@@ -168,6 +177,16 @@ data "aws_iam_policy_document" "auth" {
       test     = "StringEquals"
       variable = "kms:ViaService"
       values   = ["dynamodb.${var.region}.amazonaws.com"]
+    }
+  }
+  statement {
+    sid       = "SendSecurityAlerts"
+    actions   = ["ses:SendEmail"]
+    resources = [var.ses_identity_arn]
+    condition {
+      test     = "StringEquals"
+      variable = "ses:FromAddress"
+      values   = ["no-reply@${var.root_domain}"]
     }
   }
   statement {

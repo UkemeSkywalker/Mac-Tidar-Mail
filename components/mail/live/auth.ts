@@ -44,4 +44,4 @@ export function configureAuth() {
   configured = true;
 }
 
-export { confirmResetPassword, confirmSignIn, confirmSignUp, fetchAuthSession, getCurrentUser, resendSignUpCode, resetPassword, signIn, signOut, signUp } from "aws-amplify/auth";
+export { confirmResetPassword, confirmSignIn, confirmSignUp, fetchAuthSession, getCurrentUser, resendSignUpCode, resetPassword, setUpTOTP, signIn, signOut, signUp, verifyTOTPSetup } from "aws-amplify/auth";
