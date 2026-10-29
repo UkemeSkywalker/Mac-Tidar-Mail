@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CSSProperties, ReactNode, useEffect, useState } from "react";
 import { saveSkin, useSkin, type SkinKey } from "./skin-store";
+import { hasStoredSignIn, liveEnabled } from "./mail/live/config";
 
 // Every account entry point opens the mail app; the demo reads ?mode= to show sign-in or sign-up.
 const APP_URL = "/app/";
@@ -78,6 +79,11 @@ function Check({ tone = "forest" }: { tone?: "forest" | "mint" }) {
 function SkinPicker({ skinKey }: { skinKey: SkinKey }) {
   const [open, setOpen] = useState(false);
   const current = skins[skinKey] || skins.forest;
+  // Like Gmail: someone already signed in goes straight to their inbox.
+  useEffect(() => {
+    if (liveEnabled && hasStoredSignIn()) location.replace(APP_URL);
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     const close = (e: Event) => { if (e instanceof KeyboardEvent ? e.key === "Escape" : !(e.target as Element).closest("[data-skin-picker]")) setOpen(false); };
