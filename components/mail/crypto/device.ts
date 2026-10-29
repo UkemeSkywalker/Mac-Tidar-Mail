@@ -17,12 +17,11 @@ export interface DeviceKeyStore {
   pinRecoveryFingerprint(address: string, fingerprint: string): Promise<void>;
   getRecoveryFingerprint(address: string): Promise<string | null>;
   /**
-   * Keeps the key passphrase (derived from the password, never the password itself) wrapped
-   * the same way as the keys, so a reload can reopen the mailbox without asking again.
-   * Gives no more access than the wrapped keys this store already holds.
+   * Keeps the session's sealed passphrase (already encrypted under the server's session key)
+   * wrapped again by the device key, so a reload can reopen the mailbox without the password.
    */
-  saveSession(address: string, passphrase: string): Promise<void>;
-  /** The remembered passphrase, or null if there is none (or it can't be unwrapped). */
+  saveSession(address: string, sealed: string): Promise<void>;
+  /** The sealed passphrase, or null if there is none (or it can't be unwrapped). */
   loadSession(address: string): Promise<string | null>;
   /** Drops the remembered passphrase (sign out); key copies for recovery stay. */
   forgetSession(address: string): Promise<void>;

@@ -8,12 +8,24 @@ import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCom
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 import { normalizeAddress } from "../crypto/keys";
 import { SESv2Client } from "@aws-sdk/client-sesv2";
+import { randomBytes } from "node:crypto";
 import { AdminGetUserCommand, CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-provider";
 import { draftSk, folderGsi1, mailboxPk, META_SK, ownerGsi1, SETTINGS_SK, type DraftItem, type Folder, type MailboxMeta, type MessageItem, type SettingsItem } from "../shared/table";
 import { Conflict as SendConflict, sendMessage } from "./send";
 import { validateSend } from "./send-validate";
 import { displayNameOf, NEW_MAILBOX_DAILY_LIMIT, parseAddress, reservationKey, type Reservation } from "../shared/accounts";
 import { BadRequest, FOLDERS, validateKeyState, validatePatch, validateSettings, validateSks } from "./validate";
+
+/** Sessions per account; each signed-in browser holds one. */
+const MAX_SESSIONS = 50;
+/** "Keep me signed in": ends after 30 days without use. */
+const PERSISTENT_SESSION_S = 30 * 86400;
+/** Tab-only sign-in: the browser drops its ID when the tab closes; ours goes after 12 hours unused. */
+const TAB_SESSION_S = 12 * 3600;
+const SESSION_SK = "KEY";
+const sessionPk = (id: string) => `SESSION#${id}`;
+const sessionsGsi1 = (sub: string) => `SESSIONS#${sub}`;
+interface SessionItem { pk: string; sk: string; gsi1pk: string; gsi1sk: string; ownerSub: string; clientKey: string; persistent: boolean; ttlSeconds: number; createdAt: string; expiresAt: number }
 
 export interface ApiConfig { table: string; bucket: string; configurationSet: string; localDomains: string[]; region: string; signupDomain: string }
 /** The parts of a Mail account the API needs (read from the user pool). */
@@ -295,9 +307,62 @@ export function createHandler({ ddb, s3, ses, config, account, presign = (c, cmd
         return json(200, { deleted: true });
       }
 
+      // ── Sign-in sessions: our half of the key that reopens a mailbox after a reload ─────
+      // The browser keeps the mailbox passphrase sealed under `clientKey`; we keep only
+      // `clientKey`. Neither half opens mail alone, and deleting ours ends that session.
+      case "POST /v1/sessions": {
+        const { persistent } = (parseBody(event, 200) ?? {}) as { persistent?: unknown };
+        if (typeof persistent !== "boolean") throw new BadRequest("persistent must be true or false");
+        const count = (await ddb.send(new QueryCommand({ TableName: T, IndexName: "gsi1", KeyConditionExpression: "gsi1pk = :o", ExpressionAttributeValues: { ":o": sessionsGsi1(sub) }, Select: "COUNT" }))).Count ?? 0;
+        if (count >= MAX_SESSIONS) throw new Conflict("Too many signed-in devices. Sign out of all devices, then sign in again.");
+        const id = randomBytes(16).toString("base64url"), clientKey = randomBytes(32).toString("base64");
+        const now = Math.floor(Date.now() / 1000), ttl = persistent ? PERSISTENT_SESSION_S : TAB_SESSION_S;
+        const item: SessionItem = { pk: sessionPk(id), sk: SESSION_SK, gsi1pk: sessionsGsi1(sub), gsi1sk: id, ownerSub: sub, clientKey, persistent, ttlSeconds: ttl, createdAt: new Date().toISOString(), expiresAt: now + ttl };
+        await ddb.send(new PutCommand({ TableName: T, Item: item, ConditionExpression: "attribute_not_exists(pk)" }));
+        return json(201, { id, clientKey, expiresAt: item.expiresAt });
+      }
+
+      case "GET /v1/sessions/{id}/key": {
+        // Each use slides the expiry forward: sessions end after a stretch of no use.
+        const s = await ownedSession(sub, p.id);
+        const expiresAt = Math.floor(Date.now() / 1000) + s.ttlSeconds;
+        await ddb.send(new UpdateCommand({ TableName: T, Key: { pk: s.pk, sk: SESSION_SK }, UpdateExpression: "SET expiresAt = :e", ConditionExpression: "ownerSub = :s", ExpressionAttributeValues: { ":e": expiresAt, ":s": sub } }));
+        return json(200, { clientKey: s.clientKey, expiresAt });
+      }
+
+      case "DELETE /v1/sessions/{id}": {
+        const s = await ownedSession(sub, p.id).catch(e => { if (e instanceof NotFound) return null; throw e; });
+        if (s) await ddb.send(new DeleteCommand({ TableName: T, Key: { pk: s.pk, sk: SESSION_SK }, ConditionExpression: "ownerSub = :s", ExpressionAttributeValues: { ":s": sub } }));
+        return json(200, { deleted: true });
+      }
+
+      case "DELETE /v1/sessions": {
+        // Sign out of all devices: every sealed copy anywhere stops opening the mailbox.
+        let deleted = 0, start: Record<string, unknown> | undefined;
+        do {
+          const page = await ddb.send(new QueryCommand({ TableName: T, IndexName: "gsi1", KeyConditionExpression: "gsi1pk = :o", ExpressionAttributeValues: { ":o": sessionsGsi1(sub) }, ExclusiveStartKey: start }));
+          for (const it of (page.Items ?? []) as SessionItem[]) {
+            await ddb.send(new DeleteCommand({ TableName: T, Key: { pk: it.pk, sk: SESSION_SK } }));
+            deleted++;
+          }
+          start = page.LastEvaluatedKey;
+        } while (start);
+        console.log(JSON.stringify({ event: "sessions-revoked", deleted }));
+        return json(200, { deleted });
+      }
+
       default:
         throw new NotFound();
     }
+  }
+
+  async function ownedSession(sub: string, id: string | undefined): Promise<SessionItem> {
+    if (!/^[A-Za-z0-9_-]{22}$/.test(id ?? "")) throw new NotFound();
+    const { Item } = await ddb.send(new GetCommand({ TableName: T, Key: { pk: sessionPk(id!), sk: SESSION_SK } }));
+    const s = Item as SessionItem | undefined;
+    // TTL deletion can lag by days, so check the expiry here too.
+    if (!s || s.ownerSub !== sub || s.expiresAt * 1000 <= Date.now()) throw new NotFound();
+    return s;
   }
 
   return async (event: Event): Promise<Result> => {

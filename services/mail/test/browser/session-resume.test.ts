@@ -8,6 +8,7 @@ import {
 import { FAST_KDF } from "../helpers";
 
 const ADDRESS = "ada@mactidar.com";
+const serverKey = () => crypto.getRandomValues(new Uint8Array(32));
 const readRaw = (factory: IDBFactory) => new Promise<DeviceRecord | undefined>((resolve, reject) => {
   const open = factory.open(DEVICE_DB_NAME);
   open.onerror = () => reject(open.error);
@@ -19,33 +20,37 @@ const readRaw = (factory: IDBFactory) => new Promise<DeviceRecord | undefined>((
 });
 
 describe("reopening the mailbox after a reload", () => {
-  it("resumes with the remembered passphrase, which is stored only wrapped", async () => {
+  it("resumes only with the server's half of the key, and stores the passphrase only sealed", async () => {
     const factory = new IDBFactory();
     const device = createIndexedDbDeviceStore({ indexedDB: factory });
     const { state, session } = await setupMailboxKeys({ address: ADDRESS, password: "Correct-horse-1" }, { kdf: FAST_KDF, device });
-    await session.rememberSession(device);
+    const key = serverKey();
+    await session.rememberSession(device, key);
 
     const raw = await readRaw(factory);
     expect(raw?.session?.data.length).toBeGreaterThan(0);
     expect(new TextDecoder().decode(raw!.session!.data)).not.toContain("Correct-horse-1");
 
-    const { session: resumed } = await resumeMailbox(state, device, { kdf: FAST_KDF });
+    const { session: resumed } = await resumeMailbox(state, device, key, { kdf: FAST_KDF });
     expect(resumed.primaryFingerprint).toBe(state.primaryFingerprint);
+    // The browser copy alone, or with any other server key, opens nothing.
+    await expect(resumeMailbox(state, device, serverKey())).rejects.toBeInstanceOf(NoDeviceSessionError);
   });
 
   it("needs the password when nothing is remembered, after sign-out, or after a password change", async () => {
     const device = createIndexedDbDeviceStore({ indexedDB: new IDBFactory() });
     const { state, session } = await setupMailboxKeys({ address: ADDRESS, password: "Old-pass-1" }, { kdf: FAST_KDF, device });
-    await expect(resumeMailbox(state, device)).rejects.toBeInstanceOf(NoDeviceSessionError);
+    const key = serverKey();
+    await expect(resumeMailbox(state, device, key)).rejects.toBeInstanceOf(NoDeviceSessionError);
 
-    await session.rememberSession(device);
+    await session.rememberSession(device, key);
     await device.forgetSession(ADDRESS);
-    await expect(resumeMailbox(state, device)).rejects.toBeInstanceOf(NoDeviceSessionError);
+    await expect(resumeMailbox(state, device, key)).rejects.toBeInstanceOf(NoDeviceSessionError);
 
     // Remembered under the old password, but the key state moved to a new one elsewhere.
-    await session.rememberSession(device);
+    await session.rememberSession(device, key);
     const { state: next } = await resetMailboxKeys(state, "New-pass-1", { kdf: FAST_KDF });
-    await expect(resumeMailbox(next, device)).rejects.toBeInstanceOf(NoDeviceSessionError);
+    await expect(resumeMailbox(next, device, key)).rejects.toBeInstanceOf(NoDeviceSessionError);
     expect(await device.loadSession(ADDRESS)).toBeNull();
     await expect(unlockMailbox(next, "New-pass-1", { kdf: FAST_KDF })).resolves.toBeTruthy();
   });

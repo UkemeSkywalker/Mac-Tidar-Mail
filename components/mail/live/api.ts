@@ -43,9 +43,13 @@ const mb = (address: string) => `/v1/mailboxes/${encodeURIComponent(address)}`;
 
 export const mailApi = {
   mailboxes: () => call<{ mailboxes: ServerMailbox[] }>("GET", "/v1/mailboxes").then(r => r.mailboxes),
-  /** Claim an @mactidar.com address for the signed-in account (one per account). */
   /** Opens the mailbox for the signed-in account's own address (its username). */
   claim: () => call<{ mailbox: ServerMailbox }>("POST", "/v1/mailboxes", {}).then(r => r.mailbox),
+  /** Our server's half of the key that reopens a mailbox after a reload. */
+  createSession: (persistent: boolean) => call<{ id: string; clientKey: string }>("POST", "/v1/sessions", { persistent }),
+  sessionKey: (id: string) => call<{ clientKey: string }>("GET", `/v1/sessions/${encodeURIComponent(id)}/key`).then(r => r.clientKey),
+  endSession: (id: string) => call<{ deleted: boolean }>("DELETE", `/v1/sessions/${encodeURIComponent(id)}`),
+  endAllSessions: () => call<{ deleted: number }>("DELETE", "/v1/sessions"),
   saveKeys: (address: string, keyState: MailboxKeyState, expectedVersion: number) => call<{ keyVersion: number }>("PUT", `${mb(address)}/keys`, { keyState, expectedVersion }),
   async listFolder(address: string, folder: ServerFolder): Promise<ServerMessage[]> {
     const out: ServerMessage[] = [];

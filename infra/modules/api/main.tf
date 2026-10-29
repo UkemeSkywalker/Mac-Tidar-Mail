@@ -40,6 +40,10 @@ locals {
     "GET /v1/mailboxes/{address}/drafts",
     "PUT /v1/mailboxes/{address}/drafts/{id}",
     "DELETE /v1/mailboxes/{address}/drafts/{id}",
+    "POST /v1/sessions",
+    "GET /v1/sessions/{id}/key",
+    "DELETE /v1/sessions/{id}",
+    "DELETE /v1/sessions",
   ]
 }
 

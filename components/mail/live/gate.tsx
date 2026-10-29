@@ -12,7 +12,7 @@ import {
 import { Icon } from "../ui";
 import { ApiError, mailApi, type ServerMailbox } from "./api";
 import { COUNTRIES } from "./countries";
-import { configureAuth, confirmResetPassword, confirmSignIn, confirmSignUp, getCurrentUser, resendSignUpCode, resetPassword, signIn, signOut, signUp } from "./auth";
+import { configureAuth, confirmResetPassword, confirmSignIn, confirmSignUp, getCurrentUser, keepSignedIn, resendSignUpCode, resetPassword, sessionRef, setKeepSignedIn, signIn, signOut, signUp } from "./auth";
 
 export interface LiveSession {
   address: string;
@@ -21,6 +21,8 @@ export interface LiveSession {
   lockedKeys: number;
   lock: () => void;
   signOut: () => Promise<void>;
+  /** Ends every sign-in for this account, on every device. */
+  signOutEverywhere: () => Promise<void>;
   openRecovery: () => void;
   /** Present when this account has more than one mailbox. */
   switchMailbox?: () => void;
@@ -42,6 +44,8 @@ type Stage =
   | { s: "pick"; mailboxes: ServerMailbox[] } | { s: "switch"; mailboxes: ServerMailbox[]; error?: string }
   | { s: "recoveryShow"; code: string; file: string } | { s: "passwordChanged"; error?: string }
   | { s: "ready" } | { s: "locked"; error?: string } | { s: "fatal"; error: string };
+
+const b64 = (s: string) => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 
 /** Set while a mailbox is locked, so a reload can't skip the password. */
 const lockFlag = (address: string) => `mtmail-locked:${address}`;
@@ -187,10 +191,21 @@ export function LiveGate({ children }: { children: ReactNode }) {
     setOpened({ address: mb.address, displayName: mb.displayName, lockedKeys: lockedKeyCount(state) });
   };
 
-  /** Lets this browser reopen the mailbox after a reload, until sign-out. */
+  /**
+   * Lets this browser reopen the mailbox after a reload, until sign-out or the session expires.
+   * Our server keeps half of the key (a new session per unlock); the browser keeps the sealed half.
+   */
   const remember = (s: MailboxSession) => {
     setLocked(s.address, false);
-    if (dev.current) s.rememberSession(dev.current).catch(() => {});
+    const device = dev.current;
+    if (!device) return;
+    (async () => {
+      const old = sessionRef.get(s.address);
+      if (old) await mailApi.endSession(old).catch(() => {});
+      const { id, clientKey } = await mailApi.createSession(keepSignedIn());
+      await s.rememberSession(device, b64(clientKey));
+      sessionRef.set(s.address, id);
+    })().catch(() => sessionRef.clear(s.address)); // without it, a reload just asks for the password
   };
 
   const finishUnlock = useCallback((s: MailboxSession) => {
@@ -207,14 +222,22 @@ export function LiveGate({ children }: { children: ReactNode }) {
     if (!password.current) {
       if (!mb.keyState) { await signOut().catch(() => {}); return setStage({ s: "signin", error: "Sign in again to finish setting up your mailbox." }); }
       keyState.current = { state: mb.keyState, version: mb.keyVersion };
-      if (isLocked(mb.address) || !dev.current) return setStage({ s: "locked" });
+      const id = sessionRef.get(mb.address);
+      if (isLocked(mb.address) || !dev.current || !id) return setStage({ s: "locked" });
       setStage({ s: "working", label: "Opening your mailbox…" });
       try {
-        const { session: s, state, restored } = await resumeMailbox(mb.keyState, dev.current);
+        const clientKey = await mailApi.sessionKey(id);
+        const { session: s, state, restored } = await resumeMailbox(mb.keyState, dev.current, b64(clientKey));
         if (restored.length) await saveKeys(state);
-        return finishUnlock(s);
+        // Same session: just open it (remember() would start a new one).
+        password.current = ""; setSession(s); setStage({ s: "ready" });
+        return;
       } catch (e) {
-        if (e instanceof NoDeviceSessionError) return setStage({ s: "locked" });
+        if (e instanceof NoDeviceSessionError || (e instanceof ApiError && e.status === 404)) {
+          sessionRef.clear(mb.address);
+          await dev.current.forgetSession(mb.address).catch(() => {});
+          return setStage({ s: "locked" });
+        }
         throw e;
       }
     }
@@ -302,11 +325,19 @@ export function LiveGate({ children }: { children: ReactNode }) {
     return startAutoLock(session, { onLock: () => { setLocked(session.address, true); setSession(null); setStage({ s: "locked" }); } });
   }, [stage.s, session]);
 
-  const doSignOut = useCallback(async () => {
+  /** Ends this browser's session: our half of the key is deleted, then the sealed half. */
+  const doSignOut = useCallback(async (everywhere = false) => {
     session?.lock(); setSession(null); password.current = "";
     const addr = mailbox.current?.address;
-    if (addr) { setLocked(addr, false); await dev.current?.forgetSession(addr).catch(() => {}); }
-    await signOut().catch(() => {});
+    if (everywhere) await mailApi.endAllSessions().catch(() => {});
+    if (addr) {
+      const id = sessionRef.get(addr);
+      if (id && !everywhere) await mailApi.endSession(id).catch(() => {});
+      sessionRef.clear(addr); setLocked(addr, false);
+      await dev.current?.forgetSession(addr).catch(() => {});
+    }
+    // global: also revokes the sign-in tokens on every device.
+    await signOut(everywhere ? { global: true } : undefined).catch(() => signOut().catch(() => {}));
     setStage({ s: "signin" });
   }, [session]);
 
@@ -334,7 +365,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
   if (stage.s === "ready" && session && opened) {
     const live: LiveSession = {
       address: opened.address, displayName: opened.displayName, session,
-      lockedKeys: opened.lockedKeys, lock, signOut: doSignOut, openRecovery: () => setRecoveryOpen(true),
+      lockedKeys: opened.lockedKeys, lock, signOut: () => doSignOut(), signOutEverywhere: () => doSignOut(true), openRecovery: () => setRecoveryOpen(true),
       ...(multiple ? { switchMailbox } : {}),
     };
     return <>
@@ -348,9 +379,13 @@ export function LiveGate({ children }: { children: ReactNode }) {
       return wrap(<div className="min-h-dvh grid place-items-center bg-m-canvas text-m-muted"><div className="flex items-center gap-3 t-body-md"><span className="w-4 h-4 rounded-full border-2 border-m-brand border-t-transparent animate-spin" />{stage.label}</div></div>);
     case "signin":
       return wrap(<Shell title="Sign in" subtitle="Use your @mactidar.com address.">
-        <form className="space-y-4" onSubmit={e => { const f = form(e); run(() => doSignIn(field(f, "password")), error => ({ s: "signin", error })); }}>
+        <form className="space-y-4" onSubmit={e => { const f = form(e); setKeepSignedIn(f.get("keep") === "on"); run(() => doSignIn(field(f, "password")), error => ({ s: "signin", error })); }}>
           <AddressField value={address} onChange={setAddress} autoComplete="username" />
           <PasswordField label="Password" name="password" autoComplete="current-password" required />
+          <label className="flex items-start gap-2 t-body-md text-m-text">
+            <input type="checkbox" name="keep" className="mt-1" defaultChecked={keepSignedIn()} />
+            <span>Keep me signed in on this device<span className="block t-label-sm text-m-muted">Leave unticked on shared computers: closing the tab signs you out.</span></span>
+          </label>
           <ErrorLine text={stage.error} />
           <Primary type="submit">Sign in</Primary>
         </form>
@@ -503,7 +538,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
           <PasswordField label="Password" name="password" autoComplete="current-password" required autoFocus />
           <ErrorLine text={stage.error} /><Primary type="submit">Open mailbox</Primary>
         </form>
-        <Link onClick={doSignOut}>Sign out instead</Link>
+        <Link onClick={() => doSignOut()}>Sign out instead</Link>
       </Shell>);
     }
     case "recoveryShow":
@@ -545,10 +580,10 @@ export function LiveGate({ children }: { children: ReactNode }) {
           <PasswordField label="Password" name="password" autoComplete="current-password" required autoFocus />
           <ErrorLine text={stage.error} /><Primary type="submit">Unlock</Primary>
         </form>
-        <Link onClick={doSignOut}>Sign out instead</Link>
+        <Link onClick={() => doSignOut()}>Sign out instead</Link>
       </Shell>);
     case "fatal":
-      return wrap(<Shell title="Couldn't open your mailbox" subtitle={stage.error}><Primary onClick={doSignOut}>Back to sign in</Primary></Shell>);
+      return wrap(<Shell title="Couldn't open your mailbox" subtitle={stage.error}><Primary onClick={() => doSignOut()}>Back to sign in</Primary></Shell>);
     default:
       return null;
   }

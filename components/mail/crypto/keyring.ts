@@ -174,9 +174,13 @@ export class MailboxSession {
     return decryptAttachment(ciphertext, { decryptionKeys: this.decryptionKeys(), ...opts });
   }
 
-  /** Let this browser reopen the mailbox after a reload, without the password. */
-  async rememberSession(device: DeviceKeyStore): Promise<void> {
-    await device.saveSession(this.address, this.#unlocked().passphrase);
+  /**
+   * Let this browser reopen the mailbox after a reload, without the password. The passphrase is
+   * sealed under the server's per-session `clientKey`, then wrapped again by the device key:
+   * the browser copy is useless without the server's half, and the server never sees the blob.
+   */
+  async rememberSession(device: DeviceKeyStore, clientKey: Uint8Array): Promise<void> {
+    await device.saveSession(this.address, await sealPassphrase(this.#unlocked().passphrase, clientKey, this.address));
   }
 
   /** Keep a device-wrapped copy of every unlocked key in this browser. */
@@ -358,9 +362,11 @@ export class NoDeviceSessionError extends Error {
 export async function resumeMailbox(
   state: MailboxKeyState,
   device: DeviceKeyStore,
+  clientKey: Uint8Array,
   options: Omit<KeyringOptions, "device"> = {},
 ): Promise<{ session: MailboxSession } & RestoreResult> {
-  const passphrase = await device.loadSession(state.address);
+  const sealed = await device.loadSession(state.address);
+  const passphrase = sealed ? await openPassphrase(sealed, clientKey, state.address) : null;
   if (!passphrase) throw new NoDeviceSessionError();
   try {
     return await unlockWithPassphrase(state, passphrase, { ...options, device });
@@ -370,6 +376,32 @@ export async function resumeMailbox(
       throw new NoDeviceSessionError();
     }
     throw e;
+  }
+}
+
+const sealAad = (address: string) => new TextEncoder().encode(`mactidar-mail/session-seal/v1\0${address}`);
+const toB64 = (b: Uint8Array) => btoa(String.fromCharCode(...b));
+const fromB64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+
+async function sessionKey(clientKey: Uint8Array): Promise<CryptoKey> {
+  if (clientKey.length !== 32) throw new Error("Session key must be 32 bytes");
+  return crypto.subtle.importKey("raw", new Uint8Array(clientKey), { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+}
+
+async function sealPassphrase(passphrase: string, clientKey: Uint8Array, address: string): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const data = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: sealAad(address) }, await sessionKey(clientKey), new TextEncoder().encode(passphrase)));
+  return `${toB64(iv)}.${toB64(data)}`;
+}
+
+/** The passphrase, or null if this server key doesn't open the sealed copy. */
+async function openPassphrase(sealed: string, clientKey: Uint8Array, address: string): Promise<string | null> {
+  const [iv, data] = sealed.split(".");
+  if (!iv || !data) return null;
+  try {
+    return new TextDecoder().decode(await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(iv), additionalData: sealAad(address) }, await sessionKey(clientKey), fromB64(data)));
+  } catch {
+    return null;
   }
 }
 

@@ -110,7 +110,7 @@ resource "aws_cognito_user_pool_client" "mail_web" {
 
   access_token_validity  = 60
   id_token_validity      = 60
-  refresh_token_validity = 7
+  refresh_token_validity = 30 # matches "keep me signed in"
   auth_session_validity  = 5
 
   token_validity_units {
