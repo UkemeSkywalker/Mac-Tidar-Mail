@@ -14,11 +14,12 @@ const MX = "inbound-smtp.af-south-1.amazonaws.com";
 const TOKENS = ["aaa", "bbb", "ccc"];
 
 /** A DNS zone in memory; anything not listed doesn't exist. */
-function fakeDns(zone: { mx?: Record<string, { exchange: string; priority: number }[]>; txt?: Record<string, string[][]> }): Resolver {
+function fakeDns(zone: { mx?: Record<string, { exchange: string; priority: number }[]>; txt?: Record<string, string[][]>; cname?: Record<string, string[]> }): Resolver {
   const missing = () => Object.assign(new Error("not found"), { code: "ENOTFOUND" });
   return {
     resolveMx: async n => { const r = zone.mx?.[n]; if (!r) throw missing(); return r; },
     resolveTxt: async n => { const r = zone.txt?.[n]; if (!r) throw missing(); return r; },
+    resolveCname: async n => { const r = zone.cname?.[n]; if (!r) throw missing(); return r; },
   };
 }
 const goodZone = { mx: { "zetca.pro": [{ exchange: `${MX}.`, priority: 10 }] }, txt: { "zetca.pro": [["v=spf1 include:amazonses.com ~all"], ["google-site-verification=x"]], "_dmarc.zetca.pro": [["v=DMARC1; p=none"]] } };
@@ -80,7 +81,7 @@ beforeEach(() => { ddb.reset(); ses.reset(); zone = goodZone; });
 const api = () => createHandler({
   ddb: DynamoDBDocumentClient.from(new DynamoDBClient({})), s3: new S3Client({}), ses: new SESv2Client({}),
   account: async u => u === "ada@mactidar.com" ? { sub: "sub-a", email: "ada.backup@gmail.com", emailVerified: true, givenName: "Ada", familyName: "Obi" } : null,
-  dns: { resolveMx: n => fakeDns(zone).resolveMx(n), resolveTxt: n => fakeDns(zone).resolveTxt(n) },
+  dns: { resolveMx: n => fakeDns(zone).resolveMx(n), resolveTxt: n => fakeDns(zone).resolveTxt(n), resolveCname: n => fakeDns(zone).resolveCname(n) },
   config: { table: "t", bucket: "b", configurationSet: "mactidar-mail", localDomains: OWN, region: REGION, signupDomain: "mactidar.com" },
 });
 const call = async (routeKey: string, opts: { body?: unknown; domain?: string; sub?: string } = {}) => {
@@ -174,5 +175,71 @@ describe("removed people's mailboxes", () => {
     expect(s3.commandCalls(ListObjectVersionsCommand).map(c => c.args[0].input.Prefix)).toEqual(["msg/ana@zetca.pro/", "att/ana@zetca.pro/"]);
     expect(ddb.commandCalls(DeleteCommand).map(c => c.args[0].input.Key)).toEqual([{ pk: "OWNER#sub-ana", sk: "CLAIM" }, { pk: "PURGE#ana@zetca.pro", sk: "PURGE" }]);
     s3.restore();
+  });
+});
+
+describe("mail.<domain> web address", () => {
+  const EDGE = "d1abc.cloudfront.net";
+  let created: string[], removed: string[], cert: "pending" | "issued" | "failed", removal: "deleted" | "pending";
+  beforeEach(() => { created = []; removed = []; cert = "pending"; removal = "deleted"; });
+  const withWeb = () => createHandler({
+    ddb: DynamoDBDocumentClient.from(new DynamoDBClient({})), s3: new S3Client({}), ses: new SESv2Client({}), account: async () => null,
+    dns: { resolveMx: n => fakeDns(zone).resolveMx(n), resolveTxt: n => fakeDns(zone).resolveTxt(n), resolveCname: n => fakeDns(zone).resolveCname(n) },
+    web: { routingEndpoint: EDGE, create: async h => { created.push(h); return "tenant-1"; }, certificate: async () => cert, remove: async id => { removed.push(id); return removal; } },
+    config: { table: "t", bucket: "b", configurationSet: "c", localDomains: OWN, region: REGION, signupDomain: "mactidar.com" },
+  });
+  const call = async (h: ReturnType<typeof withWeb>, routeKey: string, o: { domain?: string; query?: Record<string, string>; claims?: Record<string, string> } = {}) => {
+    const r = await h({ routeKey, pathParameters: o.domain ? { domain: o.domain } : undefined, queryStringParameters: o.query, isBase64Encoded: false,
+      requestContext: { authorizer: o.claims ? { jwt: { claims: o.claims, scopes: [] } } : undefined } } as unknown as APIGatewayProxyEventV2WithJWTAuthorizer);
+    return { status: r.statusCode!, body: JSON.parse(r.body as string) };
+  };
+  const owner = { sub: "sub-a", username: "ada@mactidar.com" };
+
+  it("adds the CNAME record and checks it, ignoring case and the trailing dot", async () => {
+    expect(dnsRecords("zetca.pro", TOKENS, REGION, EDGE).at(-1)).toMatchObject({ purpose: "WEB", type: "CNAME", host: "mail", value: EDGE, check: "web" });
+    expect((await checkDns("zetca.pro", true, REGION, fakeDns({ ...goodZone, cname: { "mail.zetca.pro": ["D1ABC.cloudfront.net."] } }), EDGE)).web).toBe(true);
+    expect((await checkDns("zetca.pro", true, REGION, fakeDns(goodZone), EDGE)).web).toBe(false);
+  });
+  it("creates the tenant once the CNAME points at us, then goes live when the certificate is issued", async () => {
+    zone = { ...goodZone, cname: { "mail.zetca.pro": [EDGE] } };
+    ses.on(GetEmailIdentityCommand).resolves({ DkimAttributes: { Status: "SUCCESS" } });
+    ddb.on(PutCommand).resolves({});
+    ddb.on(GetCommand).resolves({ Item: stored({ status: "active" }) });
+    let r = await call(withWeb(), "POST /v1/domains/{domain}/check", { domain: "zetca.pro", claims: owner });
+    expect(created).toEqual(["mail.zetca.pro"]);
+    expect(r.body.web).toEqual({ host: "mail.zetca.pro", status: "certificate" });
+    cert = "issued";
+    ddb.on(GetCommand).resolves({ Item: stored({ status: "active", web: { tenantId: "tenant-1", certificate: "pending" } }) });
+    r = await call(withWeb(), "POST /v1/domains/{domain}/check", { domain: "zetca.pro", claims: owner });
+    expect(created).toHaveLength(1);
+    expect(r.body.web.status).toBe("live");
+  });
+  it("doesn't create a tenant for a domain that isn't active", async () => {
+    zone = { cname: { "mail.zetca.pro": [EDGE] } };
+    ses.on(GetEmailIdentityCommand).resolves({ DkimAttributes: { Status: "PENDING" } });
+    ddb.on(PutCommand).resolves({}); ddb.on(GetCommand).resolves({ Item: stored() });
+    await call(withWeb(), "POST /v1/domains/{domain}/check", { domain: "zetca.pro", claims: owner });
+    expect(created).toEqual([]);
+  });
+  it("tells a customer web address its domain and name, without sign-in, only once it's live", async () => {
+    ddb.on(GetCommand).resolves({ Item: stored({ status: "active", displayName: "Zetca", web: { tenantId: "t", certificate: "issued" } }) });
+    expect(await call(withWeb(), "GET /v1/public/brand", { query: { host: "mail.zetca.pro" } })).toEqual({ status: 200, body: { domain: "zetca.pro", displayName: "Zetca" } });
+    ddb.on(GetCommand).resolves({ Item: stored({ status: "active", web: { tenantId: "t", certificate: "pending" } }) });
+    expect((await call(withWeb(), "GET /v1/public/brand", { query: { host: "mail.zetca.pro" } })).status).toBe(404);
+    for (const host of ["zetca.pro", "mail.mactidar.com", "mail.", ""]) expect((await call(withWeb(), "GET /v1/public/brand", { query: { host } })).status, host).toBe(404);
+  });
+  it("removes the tenant with the domain, finishing later if CloudFront is still disabling it", async () => {
+    ddb.on(GetCommand).resolves({ Item: stored({ status: "active", web: { tenantId: "tenant-1", certificate: "issued" } }) });
+    ddb.on(QueryCommand).resolves({ Items: [] }); ddb.on(PutCommand).resolves({}); ddb.on(DeleteCommand).resolves({});
+    ses.on(DeleteEmailIdentityCommand).resolves({});
+    removal = "pending";
+    expect((await call(withWeb(), "DELETE /v1/domains/{domain}", { domain: "zetca.pro", claims: owner })).body).toEqual({ deleted: true });
+    expect(ddb.commandCalls(PutCommand)[0]!.args[0].input.Item).toMatchObject({ pk: "PURGE#mail.zetca.pro", tenantId: "tenant-1", gsi2pk: "PURGES" });
+    ddb.reset(); removal = "deleted";
+    ddb.on(QueryCommand).callsFake(i => ({ Items: i.ExpressionAttributeValues[":p"] === "PURGES" ? [{ pk: "PURGE#mail.zetca.pro", sk: "PURGE", address: "mail.zetca.pro", tenantId: "tenant-1" }] : [] }));
+    ddb.on(DeleteCommand).resolves({});
+    await withWeb().checkAllDomains();
+    expect(removed).toEqual(["tenant-1", "tenant-1"]);
+    expect(ddb.commandCalls(DeleteCommand)[0]!.args[0].input.Key).toEqual({ pk: "PURGE#mail.zetca.pro", sk: "PURGE" });
   });
 });

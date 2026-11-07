@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CSSProperties, ReactNode, useEffect, useState } from "react";
 import { saveSkin, useSkin, type SkinKey } from "./skin-store";
-import { hasStoredSignIn, liveEnabled } from "./mail/live/config";
+import { customHost, hasStoredSignIn, liveEnabled } from "./mail/live/config";
 import { BrandMark } from "./brand";
 
 // Every account entry point opens the mail app; the demo reads ?mode= to show sign-in or sign-up.
@@ -82,7 +82,8 @@ function SkinPicker({ skinKey }: { skinKey: SkinKey }) {
   const current = skins[skinKey] || skins.forest;
   // Like Gmail: someone already signed in goes straight to their inbox.
   useEffect(() => {
-    if (liveEnabled && hasStoredSignIn()) location.replace(APP_URL);
+    // A customer's mail.<their domain> has no homepage of its own: straight to sign-in.
+    if (liveEnabled && (hasStoredSignIn() || customHost())) location.replace(APP_URL);
   }, []);
 
   useEffect(() => {

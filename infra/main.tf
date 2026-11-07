@@ -15,7 +15,6 @@ module "storage" {
   account_id            = local.account_id
   region                = var.region
   receipt_rule_set_name = local.receipt_rule_set_name
-  app_origins           = var.app_origins
 }
 
 module "table" {
@@ -79,7 +78,10 @@ module "api" {
   user_pool_id          = module.users.user_pool_id
   user_pool_arn         = module.users.user_pool_arn
   client_id             = module.users.client_id
-  app_origins           = var.app_origins
+  web_distribution_id   = module.web_tenants.distribution_id
+  web_distribution_arn  = module.web_tenants.distribution_arn
+  web_connection_group  = { id = module.web_tenants.connection_group_id, arn = module.web_tenants.connection_group_arn }
+  web_routing_endpoint  = module.web_tenants.routing_endpoint
   bucket_name           = module.storage.bucket_name
   bucket_arn            = module.storage.bucket_arn
   table_name            = module.table.table_name
@@ -98,11 +100,16 @@ module "api" {
   ws_manage_arn         = module.push.manage_connections_arn
 }
 
+module "web_tenants" {
+  source        = "./modules/web_tenants"
+  origin_domain = trimprefix(module.hosting.default_url, "https://")
+}
+
 module "hosting" {
   source             = "./modules/hosting"
   providers          = { aws = aws.eu }
   domain             = "mail.${var.root_domain}"
-  api_url            = trimsuffix(module.api.api_url, "/")
+  api_url            = module.api.api_endpoint
   cognito_region     = var.region
   mail_bucket        = module.storage.bucket_name
   mail_bucket_region = var.region

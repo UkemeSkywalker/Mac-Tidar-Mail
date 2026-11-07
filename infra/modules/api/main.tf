@@ -5,7 +5,6 @@ variable "region" { type = string }
 variable "user_pool_id" { type = string }
 variable "user_pool_arn" { type = string }
 variable "client_id" { type = string }
-variable "app_origins" { type = list(string) }
 variable "bucket_name" { type = string }
 variable "bucket_arn" { type = string }
 variable "table_name" { type = string }
@@ -18,6 +17,10 @@ variable "ws_manage_arn" { type = string }
 variable "events_source_dir" { type = string }
 variable "account_id" { type = string }
 variable "local_domains" { type = list(string) }
+variable "web_distribution_id" { type = string }
+variable "web_distribution_arn" { type = string }
+variable "web_connection_group" { type = object({ id = string, arn = string }) }
+variable "web_routing_endpoint" { type = string }
 variable "ses_identity_arn" { type = string }
 variable "ses_configuration_set" { type = string }
 variable "ses_events_topic_arn" { type = string }
@@ -112,6 +115,18 @@ data "aws_iam_policy_document" "api" {
     resources = concat([var.ses_identity_arn], [for d in var.local_domains : "arn:aws:ses:${var.region}:${var.account_id}:identity/${d}"])
   }
   statement {
+    sid     = "CustomerWebAddresses"
+    actions = ["cloudfront:CreateDistributionTenant", "cloudfront:GetDistributionTenant", "cloudfront:UpdateDistributionTenant", "cloudfront:DeleteDistributionTenant", "cloudfront:GetManagedCertificateDetails"]
+    resources = [var.web_distribution_arn, var.web_connection_group.arn,
+    "arn:aws:cloudfront::${var.account_id}:distribution-tenant/*"]
+  }
+  statement {
+    # CloudFront-managed certificates are requested from ACM (us-east-1) on our behalf.
+    sid       = "CustomerWebCertificates"
+    actions   = ["acm:RequestCertificate", "acm:DescribeCertificate"]
+    resources = ["*"]
+  }
+  statement {
     sid       = "TableEncryptionKeyViaDynamoDB"
     actions   = ["kms:Decrypt", "kms:GenerateDataKey"]
     resources = [var.data_key_arn]
@@ -185,6 +200,9 @@ resource "aws_lambda_function" "api" {
       LOCAL_MAIL_DOMAINS                  = join(",", var.local_domains)
       SIGNUP_DOMAIN                       = var.signup_domain
       MAIL_USER_POOL_ID                   = var.user_pool_id
+      WEB_DISTRIBUTION_ID                 = var.web_distribution_id
+      WEB_CONNECTION_GROUP_ID             = var.web_connection_group.id
+      WEB_ROUTING_ENDPOINT                = var.web_routing_endpoint
       WS_ENDPOINT                         = var.ws_endpoint
       NODE_OPTIONS                        = "--enable-source-maps"
       AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1"
@@ -199,7 +217,10 @@ resource "aws_apigatewayv2_api" "mail" {
   protocol_type = "HTTP"
 
   cors_configuration {
-    allow_origins = var.app_origins
+    # Customers' own web addresses (mail.<their domain>) call this API too, and they arrive at
+    # runtime. Every route but the public brand lookup needs a bearer token (never a cookie), so a
+    # page on another origin can't act as a user without already holding their token.
+    allow_origins = ["*"]
     allow_methods = ["GET", "PUT", "PATCH", "POST", "DELETE"]
     allow_headers = ["authorization", "content-type"]
     max_age       = 3600
@@ -234,6 +255,15 @@ resource "aws_apigatewayv2_route" "routes" {
   authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
 }
 
+# The one route without sign-in: a customer web address asks which domain it belongs to, so its
+# sign-in page can show the domain's name. Returns nothing else, and is tightly rate-limited.
+resource "aws_apigatewayv2_route" "public_brand" {
+  api_id             = aws_apigatewayv2_api.mail.id
+  route_key          = "GET /v1/public/brand"
+  target             = "integrations/${aws_apigatewayv2_integration.api.id}"
+  authorization_type = "NONE"
+}
+
 resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.mail.id
   name        = "$default"
@@ -242,6 +272,12 @@ resource "aws_apigatewayv2_stage" "default" {
   default_route_settings {
     throttling_burst_limit = 40
     throttling_rate_limit  = 20
+  }
+
+  route_settings {
+    route_key              = "GET /v1/public/brand" # plain text: referencing the route would make a dependency cycle
+    throttling_burst_limit = 10
+    throttling_rate_limit  = 5
   }
 
   # Opening a new mailbox gets a much lower limit than the rest of the API.
@@ -286,6 +322,9 @@ resource "aws_cloudwatch_metric_alarm" "errors" {
 }
 
 output "api_url" { value = aws_apigatewayv2_stage.default.invoke_url }
+# The same address as api_url ($default stage), but from the API itself, which depends on nothing:
+# the web hosting can use it without a cycle through the Lambda and CloudFront.
+output "api_endpoint" { value = aws_apigatewayv2_api.mail.api_endpoint }
 
 # Daily: re-check every connected domain's DNS and release ones never verified.
 resource "aws_cloudwatch_event_rule" "domains" {

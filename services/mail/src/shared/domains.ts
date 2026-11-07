@@ -14,7 +14,12 @@ export const DOMAIN_DAILY_RECIPIENT_LIMIT = 500;
 export const PENDING_DOMAIN_DAYS = 3;
 
 export type DomainStatus = "pending" | "active" | "suspended";
-export interface DomainChecks { dkim: boolean; mx: boolean; spf: boolean; dmarc: boolean }
+export interface DomainChecks { dkim: boolean; mx: boolean; spf: boolean; dmarc: boolean; /** mail.<domain> points at us (stage 3) */ web?: boolean }
+
+/** mail.<domain>: the web address people on a customer domain can use. */
+export const webHost = (domain: string) => `mail.${domain}`;
+/** Its CloudFront tenant and certificate, once its CNAME points at us. */
+export interface DomainWeb { tenantId: string; certificate: "pending" | "issued" | "failed" }
 
 /** `DOMAIN#<name>/META`. Listed per owner through gsi1 (`DOMAINS#<sub>`). */
 export interface DomainItem {
@@ -30,6 +35,7 @@ export interface DomainItem {
   createdAt: string;
   checkedAt?: string;
   verifiedAt?: string;
+  web?: DomainWeb;
   /** Why it was suspended. DNS suspensions lift by themselves once the records are back; abuse ones don't. */
   suspendedFor?: "dns" | "abuse";
   gsi1pk: string; gsi1sk: string;
@@ -55,7 +61,9 @@ export interface PersonItem {
 /** A removed person's mailbox, deleted in the background by the daily task (gsi2 `PURGES`). */
 export const ALL_PURGES = "PURGES";
 export const purgeKey = (address: string) => ({ pk: `PURGE#${address}`, sk: "PURGE" as const });
-export interface PurgeItem { pk: string; sk: "PURGE"; address: string; ownerSub?: string; createdAt: string; gsi2pk: typeof ALL_PURGES; gsi2sk: string }
+export interface PurgeItem { pk: string; sk: "PURGE"; address: string; ownerSub?: string; createdAt: string; gsi2pk: typeof ALL_PURGES; gsi2sk: string;
+  /** Set when this is a disconnected domain's CloudFront tenant (still being disabled) rather than a mailbox. */
+  tenantId?: string }
 export const ALL_DOMAINS = "DOMAINS";
 export const NO_CHECKS: DomainChecks = { dkim: false, mx: false, spf: false, dmarc: false };
 
@@ -94,13 +102,13 @@ export function parseDisplayName(raw: unknown, domain: string): string {
   return name;
 }
 
-export type RecordPurpose = "DKIM" | "MX" | "SPF" | "DMARC";
+export type RecordPurpose = "DKIM" | "MX" | "SPF" | "DMARC" | "WEB";
 export interface DnsRecord { purpose: RecordPurpose; type: "CNAME" | "MX" | "TXT"; /** Full name */ name: string; /** Name relative to the domain ("@" for the domain itself) */ host: string; value: string; priority?: number; check: keyof DomainChecks }
 
 export const inboundMx = (region: string) => `inbound-smtp.${region}.amazonaws.com`;
 
-/** The records the owner adds at their DNS provider. */
-export function dnsRecords(domain: string, dkimTokens: string[], region: string): DnsRecord[] {
+/** The records the owner adds at their DNS provider. `webTarget` adds mail.<domain> (when we serve it). */
+export function dnsRecords(domain: string, dkimTokens: string[], region: string, webTarget?: string): DnsRecord[] {
   const rel = (name: string) => name === domain ? "@" : name.slice(0, -(domain.length + 1));
   const rec = (r: Omit<DnsRecord, "host">): DnsRecord => ({ ...r, host: rel(r.name) });
   return [
@@ -108,6 +116,7 @@ export function dnsRecords(domain: string, dkimTokens: string[], region: string)
     rec({ purpose: "MX", type: "MX", name: domain, value: inboundMx(region), priority: 10, check: "mx" }),
     rec({ purpose: "SPF", type: "TXT", name: domain, value: "v=spf1 include:amazonses.com ~all", check: "spf" }),
     rec({ purpose: "DMARC", type: "TXT", name: `_dmarc.${domain}`, value: "v=DMARC1; p=none", check: "dmarc" }),
+    ...(webTarget ? [rec({ purpose: "WEB", type: "CNAME", name: webHost(domain), value: webTarget, check: "web" })] : []),
   ];
 }
 
@@ -115,6 +124,7 @@ export function dnsRecords(domain: string, dkimTokens: string[], region: string)
 export interface Resolver {
   resolveMx(name: string): Promise<{ exchange: string; priority: number }[]>;
   resolveTxt(name: string): Promise<string[][]>;
+  resolveCname(name: string): Promise<string[]>;
 }
 
 const NO_RECORD = new Set(["ENOTFOUND", "ENODATA", "ESERVFAIL", "ETIMEOUT", "ECONNREFUSED", "EREFUSED"]);
@@ -123,8 +133,10 @@ async function orEmpty<T>(p: Promise<T[]>): Promise<T[]> {
 }
 
 /** Checks DNS for the records we need. DKIM comes from SES, which looks it up itself. */
-export async function checkDns(domain: string, dkimVerified: boolean, region: string, dns: Resolver): Promise<DomainChecks> {
-  const [mx, txt, dmarc] = await Promise.all([orEmpty(dns.resolveMx(domain)), orEmpty(dns.resolveTxt(domain)), orEmpty(dns.resolveTxt(`_dmarc.${domain}`))]);
+export async function checkDns(domain: string, dkimVerified: boolean, region: string, dns: Resolver, webTarget?: string): Promise<DomainChecks> {
+  const [mx, txt, dmarc, cname] = await Promise.all([orEmpty(dns.resolveMx(domain)), orEmpty(dns.resolveTxt(domain)), orEmpty(dns.resolveTxt(`_dmarc.${domain}`)),
+    webTarget ? orEmpty(dns.resolveCname(webHost(domain))) : Promise.resolve([])]);
+  const host = (h: string) => h.toLowerCase().replace(/\.$/, "");
   const want = inboundMx(region);
   const joined = (rs: string[][]) => rs.map(r => r.join("").trim());
   const spf = joined(txt).filter(t => /^v=spf1\b/i.test(t));
@@ -135,6 +147,7 @@ export async function checkDns(domain: string, dkimVerified: boolean, region: st
     // Exactly one SPF record is allowed; two make SPF fail everywhere.
     spf: spf.length === 1 && /\binclude:amazonses\.com\b/i.test(spf[0]!),
     dmarc: joined(dmarc).some(t => /^v=DMARC1\b/i.test(t)),
+    ...(webTarget ? { web: cname.some(c => host(c) === host(webTarget)) } : {}),
   };
 }
 

@@ -9,13 +9,14 @@ import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyStructured
 import { normalizeAddress } from "../crypto/keys";
 import { CreateEmailIdentityCommand, DeleteEmailIdentityCommand, GetEmailIdentityCommand, SendEmailCommand, SESv2Client } from "@aws-sdk/client-sesv2";
 import { promises as nodeDns } from "node:dns";
+import { CloudFrontClient, CreateDistributionTenantCommand, DeleteDistributionTenantCommand, GetDistributionTenantCommand, GetManagedCertificateDetailsCommand, UpdateDistributionTenantCommand } from "@aws-sdk/client-cloudfront";
 import { randomBytes } from "node:crypto";
 import { AdminCreateUserCommand, AdminDeleteUserCommand, AdminGetUserCommand, CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-provider";
 import { draftSk, folderGsi1, mailboxPk, META_SK, ownerGsi1, SETTINGS_SK, type DraftItem, type Folder, type MailboxMeta, type MessageItem, type SettingsItem } from "../shared/table";
 import { Conflict as SendConflict, sendMessage } from "./send";
 import { validateSend } from "./send-validate";
 import { displayNameOf, NEW_MAILBOX_DAILY_LIMIT, parseAddress, parseBackupEmail, parseLocalPart, parseName, reservationKey, type Reservation } from "../shared/accounts";
-import { ALL_DOMAINS, ALL_PURGES, DOMAIN_DAILY_RECIPIENT_LIMIT, checkDns, dnsRecords, domainDirectory, domainKey, domainsGsi1, evaluate, MAX_DOMAINS_PER_ACCOUNT, MAX_PEOPLE_PER_DOMAIN, NO_CHECKS, parseDisplayName, parseDomain, pendingExpiry, PERSON_PREFIX, personKey, purgeKey, type DomainItem, type PersonItem, type PurgeItem, type Resolver } from "../shared/domains";
+import { ALL_DOMAINS, ALL_PURGES, DOMAIN_DAILY_RECIPIENT_LIMIT, webHost, type DomainWeb, checkDns, dnsRecords, domainDirectory, domainKey, domainsGsi1, evaluate, MAX_DOMAINS_PER_ACCOUNT, MAX_PEOPLE_PER_DOMAIN, NO_CHECKS, parseDisplayName, parseDomain, pendingExpiry, PERSON_PREFIX, personKey, purgeKey, type DomainItem, type PersonItem, type PurgeItem, type Resolver } from "../shared/domains";
 import { BadRequest, FOLDERS, validateKeyState, validatePatch, validateSettings, validateSks } from "./validate";
 
 /** Sessions per account; each signed-in browser holds one. */
@@ -32,6 +33,16 @@ interface SessionItem { pk: string; sk: string; gsi1pk: string; gsi1sk: string; 
 export interface ApiConfig { table: string; bucket: string; configurationSet: string; localDomains: string[]; region: string; signupDomain: string }
 /** The parts of a Mail account the API needs (read from the user pool). */
 export interface AccountInfo { sub: string; email: string; emailVerified: boolean; givenName: string; familyName: string }
+/** mail.<domain> web addresses: CloudFront distribution tenants with managed certificates. */
+export interface WebTenants {
+  /** Where customers point mail.<domain> (CNAME): the connection group's routing endpoint. */
+  routingEndpoint: string;
+  create(host: string): Promise<string>;
+  certificate(tenantId: string): Promise<DomainWeb["certificate"]>;
+  /** "pending" while CloudFront is still disabling it; the daily task finishes the job. */
+  remove(tenantId: string): Promise<"deleted" | "pending">;
+}
+
 /** Creating and removing accounts for people on customer domains (Cognito admin API). */
 export interface UserAdmin {
   /** Creates the account and has Cognito email an invite with a temporary password. */
@@ -47,6 +58,8 @@ export interface ApiDeps {
   dns?: Resolver;
   /** Accounts for people on customer domains. */
   users?: UserAdmin;
+  /** Customer web addresses (absent in tests that don't need them). */
+  web?: WebTenants;
   presign?: (s3: S3Client, cmd: GetObjectCommand) => Promise<string>;
 }
 type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
@@ -89,7 +102,7 @@ function parseBody(event: Event, maxChars = 600_000): unknown {
   catch { throw new BadRequest("Body must be JSON"); }
 }
 
-export function createHandler({ ddb, s3, ses, config, account, users, dns = nodeDns, presign = (c, cmd) => getSignedUrl(c, cmd, { expiresIn: 300 }) }: ApiDeps) {
+export function createHandler({ ddb, s3, ses, config, account, users, web, dns = nodeDns, presign = (c, cmd) => getSignedUrl(c, cmd, { expiresIn: 300 }) }: ApiDeps) {
   const T = config.table;
 
   const directory = domainDirectory(ddb, T, config.localDomains);
@@ -113,10 +126,20 @@ export function createHandler({ ddb, s3, ses, config, account, users, dns = node
   /** Re-checks a domain's DNS and SES status and saves the result. */
   async function refreshDomain(d: DomainItem): Promise<DomainItem> {
     const identity = await ses.send(new GetEmailIdentityCommand({ EmailIdentity: d.domain }));
-    const checks = await checkDns(d.domain, identity.DkimAttributes?.Status === "SUCCESS", config.region, dns);
+    const checks = await checkDns(d.domain, identity.DkimAttributes?.Status === "SUCCESS", config.region, dns, web?.routingEndpoint);
     const now = new Date();
     const next: DomainItem = { ...d, ...evaluate(d, checks, now), checks, checkedAt: now.toISOString() };
     if (next.status !== "suspended") delete next.suspendedFor;
+    // mail.<domain>: once it points at us, add its CloudFront tenant; CloudFront then issues its
+    // certificate by itself (it serves the validation token over that same CNAME).
+    if (web && next.status === "active" && checks.web) {
+      try {
+        if (!next.web) next.web = { tenantId: await web.create(webHost(d.domain)), certificate: "pending" };
+        else if (next.web.certificate !== "issued") next.web = { ...next.web, certificate: await web.certificate(next.web.tenantId) };
+      } catch (e) {
+        console.error(JSON.stringify({ event: "web-tenant-failed", name: (e as Error).name }));
+      }
+    }
     await ddb.send(new PutCommand({ TableName: T, Item: next, ConditionExpression: "ownerSub = :s", ExpressionAttributeValues: { ":s": d.ownerSub } }));
     if (next.status !== d.status) console.log(JSON.stringify({ event: "domain-status", from: d.status, to: next.status }));
     return next;
@@ -171,7 +194,10 @@ export function createHandler({ ddb, s3, ses, config, account, users, dns = node
     do {
       const page: QueryCommandOutput = await ddb.send(new QueryCommand({ TableName: T, IndexName: "gsi2", KeyConditionExpression: "gsi2pk = :p", ExpressionAttributeValues: { ":p": ALL_PURGES }, ExclusiveStartKey: start }));
       for (const x of (page.Items ?? []) as PurgeItem[]) {
-        try { await purgeMailbox(x); purged++; }
+        try {
+          if (x.tenantId) { if (web && (await web.remove(x.tenantId)) === "deleted") await ddb.send(new DeleteCommand({ TableName: T, Key: purgeKey(x.address) })); }
+          else { await purgeMailbox(x); purged++; }
+        }
         catch (e) { counts.failed++; console.error(JSON.stringify({ event: "purge-failed", name: (e as Error).name })); }
       }
       start = page.LastEvaluatedKey;
@@ -298,8 +324,9 @@ export function createHandler({ ddb, s3, ses, config, account, users, dns = node
   /** What the owner sees: status, checks and the records to add. Never the owner's sub. */
   const publicDomain = (d: DomainItem) => ({
     domain: d.domain, displayName: d.displayName, status: d.status, suspendedFor: d.suspendedFor ?? null, checks: d.checks,
-    records: dnsRecords(d.domain, d.dkimTokens, config.region), createdAt: d.createdAt, checkedAt: d.checkedAt ?? null, verifiedAt: d.verifiedAt ?? null,
+    records: dnsRecords(d.domain, d.dkimTokens, config.region, web?.routingEndpoint), createdAt: d.createdAt, checkedAt: d.checkedAt ?? null, verifiedAt: d.verifiedAt ?? null,
     expiresAt: d.status === "pending" ? pendingExpiry(d.createdAt).toISOString() : null,
+    web: !web ? null : { host: webHost(d.domain), status: d.web?.certificate === "issued" ? "live" : d.web?.certificate === "failed" ? "failed" : d.web ? "certificate" : "dns" },
   });
 
   async function ownedMailbox(sub: string, raw: string | undefined): Promise<MailboxMeta> {
@@ -684,6 +711,11 @@ export function createHandler({ ddb, s3, ses, config, account, users, dns = node
       case "DELETE /v1/domains/{domain}": {
         const d = await ownedDomain(sub, p.domain);
         if ((await listPeople(d.domain)).length > 0) throw new Conflict("Remove everyone on this domain first.");
+        if (d.web && web && (await web.remove(d.web.tenantId)) === "pending") {
+          const host = webHost(d.domain);
+          const later: PurgeItem = { ...purgeKey(host), address: host, tenantId: d.web.tenantId, createdAt: new Date().toISOString(), gsi2pk: ALL_PURGES, gsi2sk: host };
+          await ddb.send(new PutCommand({ TableName: T, Item: later }));
+        }
         await removeDomainIdentity(d.domain);
         await ddb.send(new DeleteCommand({ TableName: T, Key: domainKey(d.domain), ConditionExpression: "ownerSub = :s", ExpressionAttributeValues: { ":s": sub } }));
         console.log(JSON.stringify({ event: "domain-removed" }));
@@ -704,7 +736,23 @@ export function createHandler({ ddb, s3, ses, config, account, users, dns = node
     return s;
   }
 
+  /**
+   * GET /v1/public/brand?host=mail.<domain> (no sign-in): which domain a customer web address
+   * belongs to, so its sign-in page can show the name. Only for active domains whose web address
+   * is live; reveals nothing else.
+   */
+  async function brand(event: Event): Promise<Result> {
+    const host = (event.queryStringParameters?.host ?? "").trim().toLowerCase();
+    if (!host.startsWith("mail.") || host.length > 260) return json(404, { error: "Not found" });
+    let domain: string;
+    try { domain = parseDomain(host.slice(5), config.localDomains); } catch { return json(404, { error: "Not found" }); }
+    const d = await directory.lookup(domain);
+    if (d?.status !== "active" || d.web?.certificate !== "issued") return json(404, { error: "Not found" });
+    return { ...json(200, { domain: d.domain, displayName: d.displayName }), headers: { "content-type": "application/json", "cache-control": "public, max-age=300" } };
+  }
+
   const api = async (event: Event): Promise<Result> => {
+    if (event.routeKey === "GET /v1/public/brand") return brand(event).catch(() => json(500, { error: "Something went wrong" }));
     const sub = event.requestContext.authorizer?.jwt?.claims?.sub;
     if (typeof sub !== "string" || !sub) return json(401, { error: "Unauthorized" });
     try {
@@ -737,6 +785,41 @@ async function poolAccount(cognito: CognitoIdentityProviderClient, poolId: strin
   }
 }
 
+/** CloudFront tenants for mail.<domain>, on the multi-tenant distribution Terraform manages. */
+function cloudFrontTenants(cf: CloudFrontClient, distributionId: string, connectionGroupId: string, routingEndpoint: string): WebTenants {
+  return {
+    routingEndpoint,
+    async create(host) {
+      const r = await cf.send(new CreateDistributionTenantCommand({
+        DistributionId: distributionId, ConnectionGroupId: connectionGroupId, Enabled: true,
+        Name: host.replace(/[^a-z0-9-]/g, "-").slice(0, 128), Domains: [{ Domain: host }],
+        ManagedCertificateRequest: { ValidationTokenHost: "cloudfront", PrimaryDomainName: host, CertificateTransparencyLoggingPreference: "enabled" },
+      }));
+      if (!r.DistributionTenant?.Id) throw new Error("CloudFront returned no tenant");
+      return r.DistributionTenant.Id;
+    },
+    async certificate(tenantId) {
+      const r = await cf.send(new GetManagedCertificateDetailsCommand({ Identifier: tenantId }));
+      const s = r.ManagedCertificateDetails?.CertificateStatus;
+      return s === "issued" ? "issued" : s === "pending-validation" || !s ? "pending" : "failed";
+    },
+    async remove(tenantId) {
+      try {
+        const current = await cf.send(new GetDistributionTenantCommand({ Identifier: tenantId }));
+        let ETag = current.ETag;
+        if (current.DistributionTenant?.Enabled) ({ ETag } = await cf.send(new UpdateDistributionTenantCommand({ Id: tenantId, IfMatch: ETag, Enabled: false })));
+        await cf.send(new DeleteDistributionTenantCommand({ Id: tenantId, IfMatch: ETag }));
+        return "deleted";
+      } catch (e) {
+        const name = (e as Error).name;
+        if (name === "EntityNotFound" || name === "NoSuchResource") return "deleted";
+        if (name === "ResourceNotDisabled" || name === "PreconditionFailed" || name === "InvalidIfMatchVersion") return "pending";
+        throw e;
+      }
+    },
+  };
+}
+
 /** Customer-domain accounts. The username is the address; the email attribute is their backup email. */
 function poolUsers(cognito: CognitoIdentityProviderClient, poolId: string): UserAdmin {
   return {
@@ -759,6 +842,7 @@ export const handler = (event: Event | ScheduledTask) => {
   cached ??= ((cognito: CognitoIdentityProviderClient) => createHandler({
     account: username => poolAccount(cognito, env("MAIL_USER_POOL_ID"), username),
     users: poolUsers(cognito, env("MAIL_USER_POOL_ID")),
+    web: cloudFrontTenants(new CloudFrontClient({ region: "us-east-1" }), env("WEB_DISTRIBUTION_ID"), env("WEB_CONNECTION_GROUP_ID"), env("WEB_ROUTING_ENDPOINT")),
     ddb: DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } }),
     s3: new S3Client({}),
     ses: new SESv2Client({}),

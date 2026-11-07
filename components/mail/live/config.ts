@@ -14,4 +14,13 @@ export function hasStoredSignIn(): boolean {
   try { return !!(localStorage.getItem(key) || sessionStorage.getItem(key)); } catch { return false; }
 }
 
+// Our own hosts; anything else is a customer's mail.<their domain>, served by the same app.
+const OWN_HOSTS = /^(?:mail\.mactidar\.com|localhost|127\.0\.0\.1)$|\.amplifyapp\.com$/;
+
+/** The customer web address this page is on (mail.yourcompany.com), or null on our own. */
+export function customHost(): string | null {
+  if (typeof location === "undefined") return null;
+  return OWN_HOSTS.test(location.hostname) ? null : location.hostname.toLowerCase();
+}
+
 export const liveEnabled = !!(liveConfig.apiUrl && liveConfig.userPoolId && liveConfig.clientId);

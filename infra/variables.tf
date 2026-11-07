@@ -22,12 +22,6 @@ variable "receiving_domains" {
   default     = ["beta.mactidar.com", "mactidar.com"]
 }
 
-variable "app_origins" {
-  description = "Browser origins allowed to call the mail API and upload/download encrypted blobs."
-  type        = list(string)
-  default     = ["https://mail.mactidar.com", "http://localhost:3000"]
-}
-
 variable "alert_email" {
   description = "Where budget and alarm notifications go. Set in terraform.tfvars (not committed)."
   type        = string

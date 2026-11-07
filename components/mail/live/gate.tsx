@@ -11,8 +11,9 @@ import {
 } from "../crypto";
 import { BrandMark } from "../../brand";
 import { Icon } from "../ui";
-import { ApiError, mailApi, type ServerMailbox } from "./api";
+import { ApiError, mailApi, type Brand, type ServerMailbox } from "./api";
 import { COUNTRIES } from "./countries";
+import { customHost } from "./config";
 import { configureAuth, confirmResetPassword, confirmSignIn, confirmSignUp, getCurrentUser, keepSignedIn, resendSignUpCode, resetPassword, sessionRef, setKeepSignedIn, signIn, signOut, signUp } from "./auth";
 
 export interface LiveSession {
@@ -84,10 +85,10 @@ const isMacTidarAddress = (v: string) => /@(?:[a-z0-9-]+\.)*mactidar\.com$/i.tes
 // Big providers people use as backup emails; nobody's Mac Tidar Mail address is on them.
 const BACKUP_PROVIDERS = /@(?:gmail|googlemail|outlook|hotmail|live|yahoo|icloud|me|aol|proton|protonmail|gmx|zoho|yandex)\.[a-z.]+$/;
 
-/** A bare name means @mactidar.com; a full address can be on any domain connected to Mac Tidar Mail. */
-function toUsername(input: string): string {
+/** A bare name gets `domain` (@mactidar.com, or a customer's own on their web address); a full address can be on any connected domain. */
+function toUsername(input: string, domain = MAIL_DOMAIN): string {
   const v = input.trim().toLowerCase();
-  if (!v.includes("@")) return `${v}@${MAIL_DOMAIN}`;
+  if (!v.includes("@")) return `${v}@${domain}`;
   if (BACKUP_PROVIDERS.test(v)) throw new Error("Sign in with your Mac Tidar Mail address. Your backup email is only for password resets.");
   return v;
 }
@@ -106,13 +107,19 @@ function toE164(dial: string, phone: string): string {
   return `+${dial}${digits.replace(/^0+/, "")}`;
 }
 
+/** On a customer's mail.<domain>: their domain and name. Null on mail.mactidar.com. */
+const BrandContext = createContext<Brand | null>(null);
+
 function Shell({ children, title, subtitle }: { children: ReactNode; title: string; subtitle?: string }) {
+  const brand = useContext(BrandContext);
   return (
     <div className="min-h-dvh grid place-items-center bg-m-canvas p-4">
       <div className="w-full max-w-md bg-m-card rounded-m-xl shadow-xl border border-m-line p-space-xl">
         <div className="flex items-center gap-3 mb-6">
           <BrandMark className="h-10" />
-          <div><b className="t-headline-sm text-m-text block">Mac Tidar Mail</b><span className="t-label-sm text-m-muted">Zero-access encrypted</span></div>
+          {brand
+            ? <div><b className="t-headline-sm text-m-text block">{brand.displayName} Mail</b><span className="t-label-sm text-m-muted">Powered by Mac Tidar Mail · zero-access encrypted</span></div>
+            : <div><b className="t-headline-sm text-m-text block">Mac Tidar Mail</b><span className="t-label-sm text-m-muted">Zero-access encrypted</span></div>}
         </div>
         <h1 className="t-headline-lg text-m-text">{title}</h1>
         {subtitle && <p className="t-body-md text-m-muted mt-1">{subtitle}</p>}
@@ -153,11 +160,12 @@ function PasswordField({ label, hint, ...props }: { label: string; hint?: string
 
 /** The @mactidar.com address (sign-in name); "ada" and "ada@mactidar.com" both work. */
 function AddressField({ value, onChange, autoComplete }: { value: string; onChange: (v: string) => void; autoComplete: string }) {
+  const brand = useContext(BrandContext);
   return (
     <label className="block">
       <span className="t-label-md text-m-muted">Mac Tidar Mail address</span>
       <input name="address" type="text" inputMode="email" required value={value} onChange={e => onChange(e.target.value)} autoComplete={autoComplete}
-        autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder={`you@${MAIL_DOMAIN}`}
+        autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder={`you@${brand?.domain ?? MAIL_DOMAIN}`}
         className="mt-1 w-full px-3 py-2.5 rounded-m-lg bg-m-low text-m-text t-body-md border border-m-line focus:outline-none focus:ring-2 focus:ring-m-brand/30" />
     </label>
   );
@@ -182,6 +190,10 @@ export function LiveGate({ children }: { children: ReactNode }) {
   const boxes = useRef<ServerMailbox[]>([]);
   const target = useRef<string | null>(null);
   const [multiple, setMultiple] = useState(false);
+  // On a customer's web address, sign-in shows their name and fills in their domain.
+  const [brand, setBrand] = useState<Brand | null>(null);
+  useEffect(() => { const host = customHost(); if (host) void mailApi.brand(host).then(setBrand); }, []);
+  const domain = brand?.domain ?? MAIL_DOMAIN;
   const keyState = useRef<{ state: MailboxKeyState; version: number } | null>(null);
   const [session, setSession] = useState<MailboxSession | null>(null);
   /** Render-side copy of the open mailbox (refs above are for async flows only). */
@@ -306,7 +318,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
   async function doSignIn(pw: string) {
     password.current = pw;
     setStage({ s: "working", label: "Signing in…" });
-    const username = toUsername(address);
+    const username = toUsername(address, domain);
     const res = await signIn({ username, password: pw });
     const step = res.nextStep.signInStep;
     if (step === "DONE") return afterSignIn();
@@ -352,7 +364,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
     setStage({ s: "switch", mailboxes: boxes.current.filter(m => m.address !== mailbox.current?.address) });
   }, [session]);
 
-  const wrap = (node: ReactNode) => <div className={`mail-root mail-skin-${skin} t-body-md antialiased`}>{node}</div>;
+  const wrap = (node: ReactNode) => <BrandContext.Provider value={brand}><div className={`mail-root mail-skin-${skin} t-body-md antialiased`}>{node}</div></BrandContext.Provider>;
   const form = (e: React.FormEvent<HTMLFormElement>) => { e.preventDefault(); return new FormData(e.currentTarget); };
   const field = (f: FormData, name: string) => String(f.get(name) ?? "");
 
@@ -383,7 +395,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
     case "working":
       return wrap(<div className="min-h-dvh grid place-items-center bg-m-canvas text-m-muted"><div className="flex items-center gap-3 t-body-md"><span className="w-4 h-4 rounded-full border-2 border-m-brand border-t-transparent animate-spin" />{stage.label}</div></div>);
     case "signin":
-      return wrap(<Shell title="Sign in" subtitle="Use your @mactidar.com address.">
+      return wrap(<Shell title="Sign in" subtitle={`Use your @${domain} address.`}>
         <form className="space-y-4" onSubmit={e => { const f = form(e); setKeepSignedIn(f.get("keep") === "on"); run(() => doSignIn(field(f, "password")), error => ({ s: "signin", error })); }}>
           <AddressField value={address} onChange={setAddress} autoComplete="username" />
           <PasswordField label="Password" name="password" autoComplete="current-password" required />
@@ -395,7 +407,9 @@ export function LiveGate({ children }: { children: ReactNode }) {
           <Primary type="submit">Sign in</Primary>
         </form>
         <div className="flex justify-between"><Link onClick={() => setStage({ s: "forgot" })}>Forgot password?</Link><NextLink href="/" className="t-label-md text-m-muted hover:underline">Back to home</NextLink></div>
-        <p className="t-body-sm text-m-muted text-center pt-2 border-t border-m-line">New to Mac Tidar Mail? <Link onClick={() => setStage({ s: "signup" })}>Create an account</Link></p>
+        {brand
+          ? <p className="t-body-sm text-m-muted text-center pt-2 border-t border-m-line">No account yet? Ask whoever manages {brand.domain} to add you.</p>
+          : <p className="t-body-sm text-m-muted text-center pt-2 border-t border-m-line">New to Mac Tidar Mail? <Link onClick={() => setStage({ s: "signup" })}>Create an account</Link></p>}
       </Shell>);
     case "signup": {
       const country = COUNTRIES.find(c => c.code === draft.country);
@@ -473,14 +487,14 @@ export function LiveGate({ children }: { children: ReactNode }) {
     case "confirmSignup":
       return wrap(<Shell title="Check your email" subtitle={stage.info ?? `We sent a 6-digit code to ${draft.backup || "your backup email"}. It can take a minute to arrive.`}>
         <form className="space-y-4" onSubmit={e => { const f = form(e); run(async () => {
-          await confirmSignUp({ username: toUsername(address), confirmationCode: field(f, "code").trim() });
+          await confirmSignUp({ username: toUsername(address, domain), confirmationCode: field(f, "code").trim() });
           await doSignIn(password.current);
         }, error => ({ s: "confirmSignup", error })); }}>
           <Field label="Code" name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" required autoFocus />
           <ErrorLine text={stage.error} /><Primary type="submit">Verify</Primary>
         </form>
         <div className="flex justify-between">
-          <Link onClick={() => run(async () => { await resendSignUpCode({ username: toUsername(address) }); setStage({ s: "confirmSignup", info: "New code sent to your backup email." }); }, error => ({ s: "confirmSignup", error }))}>Send a new code</Link>
+          <Link onClick={() => run(async () => { await resendSignUpCode({ username: toUsername(address, domain) }); setStage({ s: "confirmSignup", info: "New code sent to your backup email." }); }, error => ({ s: "confirmSignup", error }))}>Send a new code</Link>
           <Link onClick={() => setStage({ s: "signup" })}>Back</Link>
         </div>
       </Shell>);
@@ -501,7 +515,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
     case "forgot":
       return wrap(<Shell title="Reset your password" subtitle="Enter your @mactidar.com address. We’ll send a code to its backup email.">
         <form className="space-y-4" onSubmit={e => { form(e); run(async () => {
-          await resetPassword({ username: toUsername(address) });
+          await resetPassword({ username: toUsername(address, domain) });
           setStage({ s: "forgotCode" });
         }, error => ({ s: "forgot", error })); }}>
           <AddressField value={address} onChange={setAddress} autoComplete="username" />
@@ -514,7 +528,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
         <form className="space-y-4" onSubmit={e => { const f = form(e); run(async () => {
           const pw = field(f, "password");
           if (!strongEnough(pw)) throw new Error(PASSWORD_RULES);
-          await confirmResetPassword({ username: toUsername(address), confirmationCode: field(f, "code").trim(), newPassword: pw });
+          await confirmResetPassword({ username: toUsername(address, domain), confirmationCode: field(f, "code").trim(), newPassword: pw });
           await doSignIn(pw);
         }, error => ({ s: "forgotCode", error })); }}>
           <Field label="Code" name="code" inputMode="numeric" autoComplete="one-time-code" required />

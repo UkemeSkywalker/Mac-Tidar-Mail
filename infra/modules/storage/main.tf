@@ -8,7 +8,6 @@ variable "bucket_name" { type = string }
 variable "account_id" { type = string }
 variable "region" { type = string }
 variable "receipt_rule_set_name" { type = string }
-variable "app_origins" { type = list(string) }
 
 resource "aws_s3_bucket" "mail" {
   bucket = var.bucket_name
@@ -79,7 +78,9 @@ resource "aws_s3_bucket_cors_configuration" "mail" {
   bucket = aws_s3_bucket.mail.id
   cors_rule {
     allowed_methods = ["GET", "PUT"]
-    allowed_origins = var.app_origins
+    # Any origin, so customers' mail.<domain> pages work: every request needs a short-lived
+    # presigned URL from the API, which only a signed-in user can get.
+    allowed_origins = ["*"]
     allowed_headers = ["content-type", "content-length", "x-amz-*"]
     max_age_seconds = 3000
   }

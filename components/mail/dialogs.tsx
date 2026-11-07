@@ -36,7 +36,13 @@ const STATUS: Record<DomainView["status"], [string, string]> = {
   active: ["Working", "bg-m-success/15 text-m-success"],
   suspended: ["Not working", "bg-m-error-soft text-m-on-error-soft"],
 };
-const PURPOSE: Record<string, string> = { DKIM: "Proves you own the domain and signs your mail", MX: "Delivers mail for the domain to Mac Tidar Mail", SPF: "Lets receivers trust mail we send for you", DMARC: "Tells receivers what to do with forged mail" };
+const PURPOSE: Record<string, string> = { DKIM: "Proves you own the domain and signs your mail", MX: "Delivers mail for the domain to Mac Tidar Mail", SPF: "Lets receivers trust mail we send for you", DMARC: "Tells receivers what to do with forged mail", WEB: "Opens Mac Tidar Mail at this address" };
+const WEB_STATUS: Record<NonNullable<DomainView["web"]>["status"], string> = {
+  dns: "add the last record below to use it",
+  certificate: "setting up HTTPS (usually under an hour)",
+  live: "live",
+  failed: "HTTPS setup failed; check the record, then Check now",
+};
 
 function CopyText({ text }: { text: string }) {
   const [done, setDone] = useState(false);
@@ -54,7 +60,7 @@ function DomainCard({ d, onChange, onRemoved }: { d: DomainView; onChange: (d: D
   const [open, setOpen] = useState(d.status !== "active");
   const act = async (fn: () => Promise<void>) => { setBusy(true); setError(""); try { await fn(); } catch (e) { setError(e instanceof Error ? e.message : "Something went wrong."); } finally { setBusy(false); } };
   const [label, tone] = STATUS[d.status];
-  const allGood = Object.values(d.checks).every(Boolean);
+  const allGood = d.checks.dkim && d.checks.mx && d.checks.spf && d.checks.dmarc;
   return (
     <div className="rounded-m-lg border border-m-line p-3 space-y-3">
       <div className="flex flex-wrap items-center gap-2 justify-between">
@@ -72,6 +78,11 @@ function DomainCard({ d, onChange, onRemoved }: { d: DomainView; onChange: (d: D
         <Btn tone="danger" onClick={() => { if (!busy && confirm(`Disconnect ${d.domain} from Mac Tidar Mail?`)) void act(async () => { await mailApi.removeDomain(d.domain); onRemoved(); }); }}>Disconnect</Btn>
       </div>
       {error && <p className="t-body-sm text-m-error" role="alert">{error}</p>}
+      {d.status === "active" && d.web && (
+        <p className="t-body-sm text-m-muted flex items-center gap-1.5"><Icon name="language" className="text-[16px]" />
+          {d.web.status === "live" ? <>Your people can sign in at <a href={`https://${d.web.host}`} target="_blank" rel="noreferrer" className="text-m-primary hover:underline">{d.web.host}</a></> : <>{d.web.host}: {WEB_STATUS[d.web.status]}</>}
+          {" "}(and at mail.mactidar.com).</p>
+      )}
       {d.status === "active" && <People domain={d.domain} />}
       {open && (
         <div className="space-y-2">

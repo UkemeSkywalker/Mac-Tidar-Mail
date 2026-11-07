@@ -44,15 +44,27 @@ const mb = (address: string) => `/v1/mailboxes/${encodeURIComponent(address)}`;
 /** A connected domain as its owner sees it (see services/mail/src/shared/domains.ts). */
 export interface DomainView {
   domain: string; displayName: string; status: "pending" | "active" | "suspended"; suspendedFor: "dns" | "abuse" | null;
-  checks: { dkim: boolean; mx: boolean; spf: boolean; dmarc: boolean };
-  records: { purpose: string; type: string; name: string; host: string; value: string; priority?: number; check: "dkim" | "mx" | "spf" | "dmarc" }[];
+  checks: { dkim: boolean; mx: boolean; spf: boolean; dmarc: boolean; web?: boolean };
+  records: { purpose: string; type: string; name: string; host: string; value: string; priority?: number; check: "dkim" | "mx" | "spf" | "dmarc" | "web" }[];
   createdAt: string; checkedAt: string | null; verifiedAt: string | null; expiresAt: string | null;
+  /** mail.<domain>: "dns" until its CNAME points at us, then "certificate" while HTTPS is set up, then "live". */
+  web: { host: string; status: "dns" | "certificate" | "live" | "failed" } | null;
 }
 
 /** Someone with an address on a customer domain, as its owner sees them. */
 export interface PersonView { address: string; givenName: string; familyName: string; backupEmail: string; status: "invited" | "active"; createdAt: string; activatedAt: string | null }
 
+/** A customer web address's domain and name (public, no sign-in). */
+export interface Brand { domain: string; displayName: string }
+
 export const mailApi = {
+  /** Which connected domain a customer web address belongs to; null if it isn't one (yet). */
+  async brand(host: string): Promise<Brand | null> {
+    try {
+      const r = await fetch(`${liveConfig.apiUrl}/v1/public/brand?host=${encodeURIComponent(host)}`);
+      return r.ok ? await r.json() as Brand : null;
+    } catch { return null; }
+  },
   mailboxes: () => call<{ mailboxes: ServerMailbox[] }>("GET", "/v1/mailboxes").then(r => r.mailboxes),
   /** Opens the mailbox for the signed-in account's own address (its username). */
   claim: () => call<{ mailbox: ServerMailbox }>("POST", "/v1/mailboxes", {}).then(r => r.mailbox),
