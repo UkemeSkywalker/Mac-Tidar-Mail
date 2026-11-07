@@ -7,13 +7,15 @@ import { ConditionalCheckFailedException, DynamoDBClient, TransactionCanceledExc
 import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, TransactWriteCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 import { normalizeAddress } from "../crypto/keys";
-import { SESv2Client } from "@aws-sdk/client-sesv2";
+import { CreateEmailIdentityCommand, DeleteEmailIdentityCommand, GetEmailIdentityCommand, SendEmailCommand, SESv2Client } from "@aws-sdk/client-sesv2";
+import { promises as nodeDns } from "node:dns";
 import { randomBytes } from "node:crypto";
 import { AdminGetUserCommand, CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-provider";
 import { draftSk, folderGsi1, mailboxPk, META_SK, ownerGsi1, SETTINGS_SK, type DraftItem, type Folder, type MailboxMeta, type MessageItem, type SettingsItem } from "../shared/table";
 import { Conflict as SendConflict, sendMessage } from "./send";
 import { validateSend } from "./send-validate";
 import { displayNameOf, NEW_MAILBOX_DAILY_LIMIT, parseAddress, reservationKey, type Reservation } from "../shared/accounts";
+import { ALL_DOMAINS, checkDns, dnsRecords, domainKey, domainPeopleGsi1, domainsGsi1, evaluate, MAX_DOMAINS_PER_ACCOUNT, NO_CHECKS, parseDisplayName, parseDomain, pendingExpiry, type DomainItem, type Resolver } from "../shared/domains";
 import { BadRequest, FOLDERS, validateKeyState, validatePatch, validateSettings, validateSks } from "./validate";
 
 /** Sessions per account; each signed-in browser holds one. */
@@ -33,9 +35,12 @@ export interface AccountInfo { sub: string; email: string; emailVerified: boolea
 export interface ApiDeps {
   ddb: DynamoDBDocumentClient; s3: S3Client; ses: SESv2Client; config: ApiConfig;
   account: (username: string) => Promise<AccountInfo | null>;
+  /** DNS lookups for domain checks (node:dns by default). */
+  dns?: Resolver;
   presign?: (s3: S3Client, cmd: GetObjectCommand) => Promise<string>;
 }
 type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
+type ScheduledTask = { task: "check-domains" };
 type Result = APIGatewayProxyStructuredResultV2;
 
 class NotFound extends Error {}
@@ -74,8 +79,91 @@ function parseBody(event: Event, maxChars = 600_000): unknown {
   catch { throw new BadRequest("Body must be JSON"); }
 }
 
-export function createHandler({ ddb, s3, ses, config, account, presign = (c, cmd) => getSignedUrl(c, cmd, { expiresIn: 300 }) }: ApiDeps) {
+export function createHandler({ ddb, s3, ses, config, account, dns = nodeDns, presign = (c, cmd) => getSignedUrl(c, cmd, { expiresIn: 300 }) }: ApiDeps) {
   const T = config.table;
+
+  /** The caller's address: their username in the Mail user pool. */
+  function usernameOf(event: Event): string {
+    const u = event.requestContext.authorizer?.jwt?.claims?.username;
+    if (typeof u !== "string" || !u) throw new BadRequest("This account has no Mac Tidar address");
+    return u;
+  }
+
+  async function ownedDomain(sub: string, raw: string | undefined): Promise<DomainItem> {
+    let domain: string;
+    try { domain = parseDomain(decodeURIComponent(raw ?? ""), config.localDomains); } catch { throw new NotFound(); }
+    const { Item } = await ddb.send(new GetCommand({ TableName: T, Key: domainKey(domain) }));
+    const d = Item as DomainItem | undefined;
+    if (!d || d.ownerSub !== sub) throw new NotFound();
+    return d;
+  }
+
+  /** Re-checks a domain's DNS and SES status and saves the result. */
+  async function refreshDomain(d: DomainItem): Promise<DomainItem> {
+    const identity = await ses.send(new GetEmailIdentityCommand({ EmailIdentity: d.domain }));
+    const checks = await checkDns(d.domain, identity.DkimAttributes?.Status === "SUCCESS", config.region, dns);
+    const now = new Date();
+    const next: DomainItem = { ...d, ...evaluate(d, checks, now), checks, checkedAt: now.toISOString() };
+    if (next.status !== "suspended") delete next.suspendedFor;
+    await ddb.send(new PutCommand({ TableName: T, Item: next, ConditionExpression: "ownerSub = :s", ExpressionAttributeValues: { ":s": d.ownerSub } }));
+    if (next.status !== d.status) console.log(JSON.stringify({ event: "domain-status", from: d.status, to: next.status }));
+    return next;
+  }
+
+  async function removeDomainIdentity(domain: string) {
+    await ses.send(new DeleteEmailIdentityCommand({ EmailIdentity: domain })).catch(e => { if ((e as Error).name !== "NotFoundException") throw e; });
+  }
+
+  /** Tells a domain's owner (at their backup email) that it stopped or started working. */
+  async function noticeOwner(d: DomainItem, subject: string, line: string) {
+    const acct = await account(d.ownerAddress).catch(() => null);
+    if (!acct?.email || !acct.emailVerified) return;
+    const text = [`Hello,`, ``, line, ``, `Domain: ${d.domain}`, ``, `Open Mac Tidar Mail at mail.${config.signupDomain} yourself (don't use links in emails), then Settings, Domains, to see which DNS records need fixing.`, ``, `Mac Tidar Mail`].join("\n");
+    await ses.send(new SendEmailCommand({ FromEmailAddress: `Mac Tidar Mail <no-reply@${config.signupDomain}>`, Destination: { ToAddresses: [acct.email] },
+      Content: { Simple: { Subject: { Data: subject, Charset: "UTF-8" }, Body: { Text: { Data: text, Charset: "UTF-8" } } } } }))
+      .catch(e => console.error(JSON.stringify({ event: "domain-notice-failed", name: (e as Error).name })));
+  }
+
+  /** Daily: release domains never verified, and re-check the rest (DNS can change at any time). */
+  async function checkAllDomains() {
+    let start: Record<string, unknown> | undefined;
+    const counts = { checked: 0, released: 0, suspended: 0, restored: 0, failed: 0 };
+    do {
+      const page = await ddb.send(new QueryCommand({ TableName: T, IndexName: "gsi2", KeyConditionExpression: "gsi2pk = :d", ExpressionAttributeValues: { ":d": ALL_DOMAINS }, ExclusiveStartKey: start }));
+      for (const d of (page.Items ?? []) as DomainItem[]) {
+        try {
+          if (d.status === "pending" && pendingExpiry(d.createdAt).getTime() <= Date.now()) {
+            await removeDomainIdentity(d.domain);
+            await ddb.send(new DeleteCommand({ TableName: T, Key: domainKey(d.domain), ConditionExpression: "#s = :p", ExpressionAttributeNames: { "#s": "status" }, ExpressionAttributeValues: { ":p": "pending" } }));
+            counts.released++;
+            continue;
+          }
+          const next = await refreshDomain(d);
+          counts.checked++;
+          if (d.status === "active" && next.status === "suspended") {
+            counts.suspended++;
+            await noticeOwner(next, "Your domain stopped working with Mac Tidar Mail", `Mail for ${d.domain} has stopped working because its DNS records for Mac Tidar Mail (DKIM or MX) are missing or changed. Mail sent to it may bounce until they're fixed; it starts working again by itself once they are.`);
+          } else if (d.status === "suspended" && next.status === "active") {
+            counts.restored++;
+            await noticeOwner(next, "Your domain is working again", `The DNS records for ${d.domain} are correct again, so its mail is working with Mac Tidar Mail.`);
+          }
+        } catch (e) {
+          counts.failed++;
+          console.error(JSON.stringify({ event: "domain-check-failed", name: (e as Error).name }));
+        }
+      }
+      start = page.LastEvaluatedKey;
+    } while (start);
+    console.log(JSON.stringify({ event: "domains-checked", ...counts }));
+    return counts;
+  }
+
+  /** What the owner sees: status, checks and the records to add. Never the owner's sub. */
+  const publicDomain = (d: DomainItem) => ({
+    domain: d.domain, displayName: d.displayName, status: d.status, suspendedFor: d.suspendedFor ?? null, checks: d.checks,
+    records: dnsRecords(d.domain, d.dkimTokens, config.region), createdAt: d.createdAt, checkedAt: d.checkedAt ?? null, verifiedAt: d.verifiedAt ?? null,
+    expiresAt: d.status === "pending" ? pendingExpiry(d.createdAt).toISOString() : null,
+  });
 
   async function ownedMailbox(sub: string, raw: string | undefined): Promise<MailboxMeta> {
     let address: string;
@@ -109,8 +197,7 @@ export function createHandler({ ddb, s3, ses, config, account, presign = (c, cmd
         // Opens the mailbox for the signed-in account's own address (its username). One per
         // account; the OWNER#…/CLAIM marker makes that atomic. A reserved address (for example an
         // existing mailbox moving to its own login) needs a reservation for this backup email.
-        const username = event.requestContext.authorizer?.jwt?.claims?.username;
-        if (typeof username !== "string") throw new BadRequest("This account has no Mac Tidar address");
+        const username = usernameOf(event);
         const { address, reserved } = parseAddress(username, config.signupDomain);
         const { Items = [] } = await ddb.send(new QueryCommand({ TableName: T, IndexName: "gsi1", KeyConditionExpression: "gsi1pk = :o", ExpressionAttributeValues: { ":o": ownerGsi1(sub) }, Limit: 1 }));
         if (Items.length) throw new Conflict("This account already has a mailbox");
@@ -351,6 +438,59 @@ export function createHandler({ ddb, s3, ses, config, account, presign = (c, cmd
         return json(200, { deleted });
       }
 
+      // ── Your own domains ──────────────────────────────────────────────────────────────
+      // Connecting a domain creates its SES identity; DNS (DKIM CNAMEs + MX) proves control.
+      case "GET /v1/domains": {
+        const { Items } = await ddb.send(new QueryCommand({ TableName: T, IndexName: "gsi1", KeyConditionExpression: "gsi1pk = :o", ExpressionAttributeValues: { ":o": domainsGsi1(sub) } }));
+        return json(200, { domains: ((Items ?? []) as DomainItem[]).map(publicDomain), limit: MAX_DOMAINS_PER_ACCOUNT });
+      }
+
+      case "POST /v1/domains": {
+        const ownerAddress = usernameOf(event);
+        const body = (parseBody(event, 500) ?? {}) as { domain?: unknown; displayName?: unknown };
+        const domain = parseDomain(body.domain, config.localDomains);
+        const displayName = parseDisplayName(body.displayName, domain);
+        const count = (await ddb.send(new QueryCommand({ TableName: T, IndexName: "gsi1", KeyConditionExpression: "gsi1pk = :o", ExpressionAttributeValues: { ":o": domainsGsi1(sub) }, Select: "COUNT" }))).Count ?? 0;
+        if (count >= MAX_DOMAINS_PER_ACCOUNT) throw new Conflict(`You can connect up to ${MAX_DOMAINS_PER_ACCOUNT} domains for now.`);
+        const now = new Date().toISOString();
+        const item: DomainItem = { ...domainKey(domain), type: "domain", domain, ownerSub: sub, ownerAddress, displayName, status: "pending", dkimTokens: [], checks: NO_CHECKS, createdAt: now, gsi1pk: domainsGsi1(sub), gsi1sk: domain, gsi2pk: ALL_DOMAINS, gsi2sk: domain };
+        // Claim the name first, so two people can't both start connecting it.
+        try { await ddb.send(new PutCommand({ TableName: T, Item: item, ConditionExpression: "attribute_not_exists(pk)" })); }
+        catch (e) { if (e instanceof ConditionalCheckFailedException) throw new Conflict("That domain is already connected, or someone is connecting it."); throw e; }
+        try {
+          const r = await ses.send(new CreateEmailIdentityCommand({ EmailIdentity: domain, ConfigurationSetName: config.configurationSet, DkimSigningAttributes: { NextSigningKeyLength: "RSA_2048_BIT" } }));
+          item.dkimTokens = r.DkimAttributes?.Tokens ?? [];
+        } catch (e) {
+          await ddb.send(new DeleteCommand({ TableName: T, Key: domainKey(domain) }));
+          if ((e as Error).name === "AlreadyExistsException") throw new Conflict("That domain is already connected.");
+          throw e;
+        }
+        if (item.dkimTokens.length !== 3) throw new Error("SES returned no DKIM tokens");
+        await ddb.send(new UpdateCommand({ TableName: T, Key: domainKey(domain), UpdateExpression: "SET dkimTokens = :t", ExpressionAttributeValues: { ":t": item.dkimTokens } }));
+        console.log(JSON.stringify({ event: "domain-connected" }));
+        return json(201, publicDomain(item));
+      }
+
+      case "GET /v1/domains/{domain}":
+        return json(200, publicDomain(await ownedDomain(sub, p.domain)));
+
+      case "POST /v1/domains/{domain}/check": {
+        const d = await ownedDomain(sub, p.domain);
+        // DNS and SES lookups cost money and time; one check every 10 seconds is plenty.
+        if (d.checkedAt && Date.now() - Date.parse(d.checkedAt) < 10_000) return json(200, publicDomain(d));
+        return json(200, publicDomain(await refreshDomain(d)));
+      }
+
+      case "DELETE /v1/domains/{domain}": {
+        const d = await ownedDomain(sub, p.domain);
+        const people = (await ddb.send(new QueryCommand({ TableName: T, IndexName: "gsi1", KeyConditionExpression: "gsi1pk = :o", ExpressionAttributeValues: { ":o": domainPeopleGsi1(d.domain) }, Select: "COUNT" }))).Count ?? 0;
+        if (people > 0) throw new Conflict("Remove everyone on this domain first.");
+        await removeDomainIdentity(d.domain);
+        await ddb.send(new DeleteCommand({ TableName: T, Key: domainKey(d.domain), ConditionExpression: "ownerSub = :s", ExpressionAttributeValues: { ":s": sub } }));
+        console.log(JSON.stringify({ event: "domain-removed" }));
+        return json(200, { deleted: true });
+      }
+
       default:
         throw new NotFound();
     }
@@ -365,7 +505,7 @@ export function createHandler({ ddb, s3, ses, config, account, presign = (c, cmd
     return s;
   }
 
-  return async (event: Event): Promise<Result> => {
+  const api = async (event: Event): Promise<Result> => {
     const sub = event.requestContext.authorizer?.jwt?.claims?.sub;
     if (typeof sub !== "string" || !sub) return json(401, { error: "Unauthorized" });
     try {
@@ -378,6 +518,7 @@ export function createHandler({ ddb, s3, ses, config, account, presign = (c, cmd
       return json(500, { error: "Something went wrong" });
     }
   };
+  return Object.assign(api, { checkAllDomains });
 }
 
 function env(name: string): string {
@@ -398,7 +539,7 @@ async function poolAccount(cognito: CognitoIdentityProviderClient, poolId: strin
 }
 
 let cached: ReturnType<typeof createHandler> | undefined;
-export const handler = (event: Event) => {
+export const handler = (event: Event | ScheduledTask) => {
   cached ??= createHandler({
     account: (cognito => (username: string) => poolAccount(cognito, env("MAIL_USER_POOL_ID"), username))(new CognitoIdentityProviderClient({})),
     ddb: DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } }),
@@ -410,5 +551,10 @@ export const handler = (event: Event) => {
       signupDomain: env("SIGNUP_DOMAIN").trim().toLowerCase(),
     },
   });
+  // The daily schedule invokes this function directly; API Gateway events always carry routeKey.
+  if (!("routeKey" in event)) {
+    if (event.task === "check-domains") return cached.checkAllDomains();
+    throw new Error("Unknown task");
+  }
   return cached(event);
 };
