@@ -1,6 +1,6 @@
 import { ConditionalCheckFailedException, DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
-import { S3Client } from "@aws-sdk/client-s3";
+import { BatchWriteCommand, DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { DeleteObjectsCommand, ListObjectVersionsCommand, S3Client } from "@aws-sdk/client-s3";
 import { CreateEmailIdentityCommand, DeleteEmailIdentityCommand, GetEmailIdentityCommand, SendEmailCommand, SESv2Client } from "@aws-sdk/client-sesv2";
 import { mockClient } from "aws-sdk-client-mock";
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from "aws-lambda";
@@ -144,16 +144,35 @@ describe("checking and removing", () => {
 describe("daily check", () => {
   it("releases expired pending domains and suspends ones whose records disappeared, telling the owner", async () => {
     const old = new Date(Date.now() - 4 * 86400_000).toISOString();
-    ddb.on(QueryCommand).resolves({ Items: [stored({ domain: "stale.com", pk: "DOMAIN#stale.com", createdAt: old }), stored({ status: "active", verifiedAt: old })] });
+    const domains = [stored({ domain: "stale.com", pk: "DOMAIN#stale.com", createdAt: old }), stored({ status: "active", verifiedAt: old })];
+    ddb.on(QueryCommand).callsFake(i => ({ Items: i.ExpressionAttributeValues[":d"] === "DOMAINS" ? domains : [] }));
     ddb.on(DeleteCommand).resolves({}); ddb.on(PutCommand).resolves({});
     ses.on(DeleteEmailIdentityCommand).resolves({}); ses.on(SendEmailCommand).resolves({});
     ses.on(GetEmailIdentityCommand).resolves({ DkimAttributes: { Status: "SUCCESS" } });
     zone = { ...goodZone, mx: {} };
-    expect(await api().checkAllDomains()).toEqual({ checked: 1, released: 1, suspended: 1, restored: 0, failed: 0 });
+    expect(await api().checkAllDomains()).toEqual({ checked: 1, released: 1, suspended: 1, restored: 0, failed: 0, purged: 0 });
     expect(ses.commandCalls(DeleteEmailIdentityCommand)[0]!.args[0].input.EmailIdentity).toBe("stale.com");
     expect(ddb.commandCalls(PutCommand)[0]!.args[0].input.Item).toMatchObject({ domain: "zetca.pro", status: "suspended", suspendedFor: "dns" });
     const mail = ses.commandCalls(SendEmailCommand)[0]!.args[0].input;
     expect(mail.Destination?.ToAddresses).toEqual(["ada.backup@gmail.com"]);
     expect(mail.Content?.Simple?.Body?.Text?.Data).not.toMatch(/https?:\/\//);
+  });
+});
+
+describe("removed people's mailboxes", () => {
+  it("are deleted by the daily task: every item, every S3 version, the claim marker, then the marker itself", async () => {
+    const s3 = mockClient(S3Client);
+    ddb.on(QueryCommand).callsFake(i => {
+      if (i.ExpressionAttributeValues[":p"] === "PURGES") return { Items: [{ pk: "PURGE#ana@zetca.pro", sk: "PURGE", address: "ana@zetca.pro", ownerSub: "sub-ana", createdAt: "x", gsi2pk: "PURGES", gsi2sk: "ana@zetca.pro" }] };
+      if (i.ExpressionAttributeValues[":p"] === "MAILBOX#ana@zetca.pro") return { Items: [{ pk: "MAILBOX#ana@zetca.pro", sk: "META" }, { pk: "MAILBOX#ana@zetca.pro", sk: "MSG#1" }] };
+      return { Items: [] };
+    });
+    ddb.on(BatchWriteCommand).resolves({}); ddb.on(DeleteCommand).resolves({});
+    s3.on(ListObjectVersionsCommand).resolves({ Versions: [{ Key: "msg/ana@zetca.pro/1.pgp", VersionId: "v1" }] }); s3.on(DeleteObjectsCommand).resolves({});
+    expect((await api().checkAllDomains()).purged).toBe(1);
+    expect(ddb.commandCalls(BatchWriteCommand)[0]!.args[0].input.RequestItems!.t).toHaveLength(2);
+    expect(s3.commandCalls(ListObjectVersionsCommand).map(c => c.args[0].input.Prefix)).toEqual(["msg/ana@zetca.pro/", "att/ana@zetca.pro/"]);
+    expect(ddb.commandCalls(DeleteCommand).map(c => c.args[0].input.Key)).toEqual([{ pk: "OWNER#sub-ana", sk: "CLAIM" }, { pk: "PURGE#ana@zetca.pro", sk: "PURGE" }]);
+    s3.restore();
   });
 });

@@ -49,6 +49,9 @@ export interface DomainView {
   createdAt: string; checkedAt: string | null; verifiedAt: string | null; expiresAt: string | null;
 }
 
+/** Someone with an address on a customer domain, as its owner sees them. */
+export interface PersonView { address: string; givenName: string; familyName: string; backupEmail: string; status: "invited" | "active"; createdAt: string; activatedAt: string | null }
+
 export const mailApi = {
   mailboxes: () => call<{ mailboxes: ServerMailbox[] }>("GET", "/v1/mailboxes").then(r => r.mailboxes),
   /** Opens the mailbox for the signed-in account's own address (its username). */
@@ -62,6 +65,10 @@ export const mailApi = {
   connectDomain: (domain: string, displayName: string) => call<DomainView>("POST", "/v1/domains", { domain, displayName }),
   checkDomain: (domain: string) => call<DomainView>("POST", `/v1/domains/${encodeURIComponent(domain)}/check`),
   removeDomain: (domain: string) => call<{ deleted: boolean }>("DELETE", `/v1/domains/${encodeURIComponent(domain)}`),
+  people: (domain: string) => call<{ people: PersonView[]; limit: number }>("GET", `/v1/domains/${encodeURIComponent(domain)}/people`),
+  addPerson: (domain: string, p: { localPart: string; givenName: string; familyName: string; backupEmail: string }) => call<PersonView>("POST", `/v1/domains/${encodeURIComponent(domain)}/people`, p),
+  resendInvite: (domain: string, address: string) => call<{ sent: boolean }>("POST", `/v1/domains/${encodeURIComponent(domain)}/people/${encodeURIComponent(address)}/invite`),
+  removePerson: (domain: string, address: string) => call<{ deleted: boolean }>("DELETE", `/v1/domains/${encodeURIComponent(domain)}/people/${encodeURIComponent(address)}`),
   saveKeys: (address: string, keyState: MailboxKeyState, expectedVersion: number) => call<{ keyVersion: number }>("PUT", `${mb(address)}/keys`, { keyState, expectedVersion }),
   async listFolder(address: string, folder: ServerFolder): Promise<ServerMessage[]> {
     const out: ServerMessage[] = [];

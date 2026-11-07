@@ -49,6 +49,10 @@ locals {
     "GET /v1/domains/{domain}",
     "POST /v1/domains/{domain}/check",
     "DELETE /v1/domains/{domain}",
+    "GET /v1/domains/{domain}/people",
+    "POST /v1/domains/{domain}/people",
+    "POST /v1/domains/{domain}/people/{address}/invite",
+    "DELETE /v1/domains/{domain}/people/{address}",
   ]
 }
 
@@ -92,7 +96,7 @@ data "aws_iam_policy_document" "api" {
   }
   statement {
     sid       = "MailboxTable"
-    actions   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem", "dynamodb:Query"]
+    actions   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem", "dynamodb:Query", "dynamodb:BatchWriteItem"]
     resources = [var.table_arn, "${var.table_arn}/index/*"]
   }
   statement {
@@ -123,17 +127,11 @@ data "aws_iam_policy_document" "api" {
     resources = ["${var.bucket_arn}/msg/*", "${var.bucket_arn}/att/*"]
   }
   statement {
-    sid     = "SendAsMacTidarAddressesOnly"
-    actions = ["ses:SendEmail", "ses:SendRawEmail"]
-    resources = concat(
-      [var.ses_identity_arn, "arn:aws:ses:${var.region}:${var.account_id}:configuration-set/${var.ses_configuration_set}"],
-      [for d in var.local_domains : "arn:aws:ses:${var.region}:${var.account_id}:identity/${d}"],
-    )
-    condition {
-      test     = "StringLike"
-      variable = "ses:FromAddress"
-      values   = [for d in var.local_domains : "*@${d}"]
-    }
+    # Any identity in this account: customer domains are created at runtime. The code only ever
+    # sends from a mailbox the caller owns, on our own or an active customer domain.
+    sid       = "SendFromOurIdentities"
+    actions   = ["ses:SendEmail", "ses:SendRawEmail"]
+    resources = ["arn:aws:ses:${var.region}:${var.account_id}:identity/*", "arn:aws:ses:${var.region}:${var.account_id}:configuration-set/${var.ses_configuration_set}"]
   }
   statement {
     sid       = "PushNewMailSignal"
@@ -141,8 +139,8 @@ data "aws_iam_policy_document" "api" {
     resources = [var.ws_manage_arn]
   }
   statement {
-    sid       = "ReadMailAccountForMailboxClaim"
-    actions   = ["cognito-idp:AdminGetUser"]
+    sid       = "MailAccountsAndCustomDomainPeople"
+    actions   = ["cognito-idp:AdminGetUser", "cognito-idp:AdminCreateUser", "cognito-idp:AdminDeleteUser"]
     resources = [var.user_pool_arn]
   }
   statement {

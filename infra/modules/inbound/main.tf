@@ -170,10 +170,11 @@ resource "aws_ses_receipt_rule_set" "mail" {
 resource "aws_ses_receipt_rule" "inbound" {
   name          = local.rule_name
   rule_set_name = aws_ses_receipt_rule_set.mail.rule_set_name
-  recipients    = var.receiving_domains
-  enabled       = true
-  scan_enabled  = true
-  tls_policy    = "Require"
+  # No recipient list: the rule takes mail for every domain verified in SES, which includes
+  # customer domains. The Lambda only delivers to Mac Tidar's own and active customer domains.
+  enabled      = true
+  scan_enabled = true
+  tls_policy   = "Require"
 
   s3_action {
     position          = 1

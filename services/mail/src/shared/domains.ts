@@ -3,6 +3,7 @@
 // CNAMEs resolve, and mail only arrives once its MX points at us. Domains are data, not
 // Terraform: each one gets its own SES identity, created by the API.
 import { domainToASCII } from "node:url";
+import { GetCommand, type DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { BadRequest } from "../api/validate";
 
 /** Free-tier limits. */
@@ -38,8 +39,23 @@ export interface DomainItem {
 
 export const domainKey = (domain: string) => ({ pk: `DOMAIN#${domain}`, sk: "META" as const });
 export const domainsGsi1 = (ownerSub: string) => `DOMAINS#${ownerSub}`;
-/** gsi1 partition for the people (mailboxes) on a domain. */
-export const domainPeopleGsi1 = (domain: string) => `DOMAINPEOPLE#${domain}`;
+/** A person the owner added: `DOMAIN#<name>/PERSON#<address>`, listed with the domain's own partition. */
+export const PERSON_PREFIX = "PERSON#";
+export const personKey = (domain: string, address: string) => ({ pk: `DOMAIN#${domain}`, sk: `${PERSON_PREFIX}${address}` });
+export interface PersonItem {
+  pk: string; sk: string; type: "person";
+  address: string; domain: string; givenName: string; familyName: string;
+  /** Where the invite went; the person's own backup email for password resets. */
+  backupEmail: string;
+  /** "invited" until they first sign in and their mailbox is created. */
+  status: "invited" | "active";
+  createdAt: string; activatedAt?: string;
+}
+
+/** A removed person's mailbox, deleted in the background by the daily task (gsi2 `PURGES`). */
+export const ALL_PURGES = "PURGES";
+export const purgeKey = (address: string) => ({ pk: `PURGE#${address}`, sk: "PURGE" as const });
+export interface PurgeItem { pk: string; sk: "PURGE"; address: string; ownerSub?: string; createdAt: string; gsi2pk: typeof ALL_PURGES; gsi2sk: string }
 export const ALL_DOMAINS = "DOMAINS";
 export const NO_CHECKS: DomainChecks = { dkim: false, mx: false, spf: false, dmarc: false };
 
@@ -136,3 +152,31 @@ export function evaluate(item: Pick<DomainItem, "status" | "suspendedFor" | "ver
 
 /** When an unverified domain is released. */
 export const pendingExpiry = (createdAt: string) => new Date(Date.parse(createdAt) + PENDING_DOMAIN_DAYS * 86400_000);
+
+/**
+ * Which domains are "ours": Mac Tidar's own, plus every active customer domain. Mail between
+ * addresses on these is delivered directly and end-to-end encrypted. Customer domains are looked up
+ * in the table and cached briefly, so a Lambda doesn't read the same domain for every message.
+ */
+export function domainDirectory(ddb: DynamoDBDocumentClient, table: string, own: string[], ttlMs = 60_000) {
+  const cache = new Map<string, { item: DomainItem | undefined; at: number }>();
+  async function lookup(domain: string): Promise<DomainItem | undefined> {
+    const hit = cache.get(domain);
+    if (hit && Date.now() - hit.at < ttlMs) return hit.item;
+    const Item = (await ddb.send(new GetCommand({ TableName: table, Key: domainKey(domain) })))?.Item;
+    const item = Item?.type === "domain" ? Item as DomainItem : undefined;
+    cache.set(domain, { item, at: Date.now() });
+    return item;
+  }
+  const isOwn = (domain: string) => own.some(d => domain === d);
+  return {
+    isOwn,
+    /** The customer domain, if `domain` is one (any status). */
+    lookup,
+    /** True for Mac Tidar's own domains and active customer domains. */
+    async isLocal(domain: string) { return isOwn(domain) || (await lookup(domain))?.status === "active"; },
+    /** Sending from a customer domain needs it active (DNS correct, not paused for abuse). */
+    async canSendFrom(domain: string) { return isOwn(domain) || (await lookup(domain))?.status === "active"; },
+  };
+}
+export type DomainDirectory = ReturnType<typeof domainDirectory>;

@@ -20,7 +20,8 @@ export interface MailboxMeta {
   address: string;
   ownerSub: string;
   displayName: string;
-  status: "active" | "suspended";
+  /** "deleted": its person was removed from a customer domain; the daily task deletes the data. */
+  status: "active" | "suspended" | "deleted";
   createdAt: string;
   gsi1pk: string;
   gsi1sk: string;
@@ -28,7 +29,7 @@ export interface MailboxMeta {
   /** Bumped on every key change, for optimistic concurrency between devices. */
   keyVersion?: number;
   /** "self" when claimed through sign-up; absent for admin-provisioned mailboxes. */
-  createdBy?: "self" | "admin";
+  createdBy?: "self" | "admin" | "domain";
   /** Overrides the default daily recipient cap (new sign-ups start lower). */
   dailyRecipientLimit?: number;
 }
