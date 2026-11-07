@@ -41,6 +41,14 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 
 const mb = (address: string) => `/v1/mailboxes/${encodeURIComponent(address)}`;
 
+/** A connected domain as its owner sees it (see services/mail/src/shared/domains.ts). */
+export interface DomainView {
+  domain: string; displayName: string; status: "pending" | "active" | "suspended"; suspendedFor: "dns" | "abuse" | null;
+  checks: { dkim: boolean; mx: boolean; spf: boolean; dmarc: boolean };
+  records: { purpose: string; type: string; name: string; host: string; value: string; priority?: number; check: "dkim" | "mx" | "spf" | "dmarc" }[];
+  createdAt: string; checkedAt: string | null; verifiedAt: string | null; expiresAt: string | null;
+}
+
 export const mailApi = {
   mailboxes: () => call<{ mailboxes: ServerMailbox[] }>("GET", "/v1/mailboxes").then(r => r.mailboxes),
   /** Opens the mailbox for the signed-in account's own address (its username). */
@@ -50,6 +58,10 @@ export const mailApi = {
   sessionKey: (id: string) => call<{ clientKey: string }>("GET", `/v1/sessions/${encodeURIComponent(id)}/key`).then(r => r.clientKey),
   endSession: (id: string) => call<{ deleted: boolean }>("DELETE", `/v1/sessions/${encodeURIComponent(id)}`),
   endAllSessions: () => call<{ deleted: number }>("DELETE", "/v1/sessions"),
+  domains: () => call<{ domains: DomainView[]; limit: number }>("GET", "/v1/domains"),
+  connectDomain: (domain: string, displayName: string) => call<DomainView>("POST", "/v1/domains", { domain, displayName }),
+  checkDomain: (domain: string) => call<DomainView>("POST", `/v1/domains/${encodeURIComponent(domain)}/check`),
+  removeDomain: (domain: string) => call<{ deleted: boolean }>("DELETE", `/v1/domains/${encodeURIComponent(domain)}`),
   saveKeys: (address: string, keyState: MailboxKeyState, expectedVersion: number) => call<{ keyVersion: number }>("PUT", `${mb(address)}/keys`, { keyState, expectedVersion }),
   async listFolder(address: string, folder: ServerFolder): Promise<ServerMessage[]> {
     const out: ServerMessage[] = [];

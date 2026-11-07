@@ -44,6 +44,11 @@ locals {
     "GET /v1/sessions/{id}/key",
     "DELETE /v1/sessions/{id}",
     "DELETE /v1/sessions",
+    "GET /v1/domains",
+    "POST /v1/domains",
+    "GET /v1/domains/{domain}",
+    "POST /v1/domains/{domain}/check",
+    "DELETE /v1/domains/{domain}",
   ]
 }
 
@@ -89,6 +94,18 @@ data "aws_iam_policy_document" "api" {
     sid       = "MailboxTable"
     actions   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem", "dynamodb:Query"]
     resources = [var.table_arn, "${var.table_arn}/index/*"]
+  }
+  statement {
+    sid       = "CustomerDomainIdentities"
+    actions   = ["ses:CreateEmailIdentity", "ses:GetEmailIdentity", "ses:DeleteEmailIdentity", "ses:TagResource"]
+    resources = ["arn:aws:ses:${var.region}:${var.account_id}:identity/*", "arn:aws:ses:${var.region}:${var.account_id}:configuration-set/${var.ses_configuration_set}"]
+  }
+  statement {
+    # Backstop for the code's own check: Mac Tidar's domains can never be changed or removed from here.
+    sid       = "NeverTouchOurOwnIdentities"
+    effect    = "Deny"
+    actions   = ["ses:CreateEmailIdentity", "ses:DeleteEmailIdentity"]
+    resources = concat([var.ses_identity_arn], [for d in var.local_domains : "arn:aws:ses:${var.region}:${var.account_id}:identity/${d}"])
   }
   statement {
     sid       = "TableEncryptionKeyViaDynamoDB"
@@ -271,6 +288,27 @@ resource "aws_cloudwatch_metric_alarm" "errors" {
 }
 
 output "api_url" { value = aws_apigatewayv2_stage.default.invoke_url }
+
+# Daily: re-check every connected domain's DNS and release ones never verified.
+resource "aws_cloudwatch_event_rule" "domains" {
+  name                = "${local.function_name}-check-domains"
+  description         = "Re-check customer domains and release unverified ones."
+  schedule_expression = "rate(1 day)"
+}
+
+resource "aws_cloudwatch_event_target" "domains" {
+  rule  = aws_cloudwatch_event_rule.domains.name
+  arn   = aws_lambda_function.api.arn
+  input = jsonencode({ task = "check-domains" })
+}
+
+resource "aws_lambda_permission" "domains" {
+  statement_id  = "AllowDailyDomainCheck"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.api.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.domains.arn
+}
 
 # ── Delivery events: SES → SNS → this Lambda → Sent copy's delivery status ──────────────────
 data "archive_file" "events" {
