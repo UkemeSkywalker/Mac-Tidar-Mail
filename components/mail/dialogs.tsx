@@ -1,7 +1,7 @@
 "use client";
 
 import { ReactNode, useEffect, useState } from "react";
-import { mailApi, type DomainView } from "./live/api";
+import { mailApi, type DomainView, type PersonView } from "./live/api";
 import { saveSkin, useSkin } from "../skin-store";
 import { MAIL_SKINS } from "./skins";
 import { useMail } from "./store";
@@ -63,7 +63,7 @@ function DomainCard({ d, onChange, onRemoved }: { d: DomainView; onChange: (d: D
       </div>
       <p className="t-body-sm text-m-muted">
         {d.status === "pending" && <>Add the records below at the company where you manage DNS for {d.domain}, then choose Check now. Changes can take up to a few hours to show.{d.expiresAt && <> If it isn’t finished by {new Date(d.expiresAt).toLocaleDateString()}, the domain is released and you can start again.</>}</>}
-        {d.status === "active" && <>Mail for {d.domain} works with Mac Tidar Mail.{!allGood && " Add the remaining records so mail you send is trusted."} Adding people with addresses on this domain is coming next.</>}
+        {d.status === "active" && <>Mail for {d.domain} works with Mac Tidar Mail.{!allGood && " Add the remaining records so mail you send is trusted."}</>}
         {d.status === "suspended" && (d.suspendedFor === "abuse" ? "Sending is paused for this domain. Contact us to sort it out." : `Some records Mac Tidar Mail needs are missing or changed, so mail for ${d.domain} isn’t working. It starts again by itself once they’re back.`)}
       </p>
       <div className="flex flex-wrap gap-2">
@@ -72,6 +72,7 @@ function DomainCard({ d, onChange, onRemoved }: { d: DomainView; onChange: (d: D
         <Btn tone="danger" onClick={() => { if (!busy && confirm(`Disconnect ${d.domain} from Mac Tidar Mail?`)) void act(async () => { await mailApi.removeDomain(d.domain); onRemoved(); }); }}>Disconnect</Btn>
       </div>
       {error && <p className="t-body-sm text-m-error" role="alert">{error}</p>}
+      {d.status === "active" && <People domain={d.domain} />}
       {open && (
         <div className="space-y-2">
           <p className="t-body-sm text-m-muted">Names are shown the way most DNS providers want them (“@” means {d.domain} itself). If yours asks for the full name, add <span className="t-code">.{d.domain}</span>. If {d.domain} already has a record starting <span className="t-code">v=spf1</span>, add <span className="t-code">include:amazonses.com</span> to it instead of adding a second one.</p>
@@ -91,6 +92,59 @@ function DomainCard({ d, onChange, onRemoved }: { d: DomainView; onChange: (d: D
           {d.checkedAt && <p className="t-label-sm text-m-muted">Last checked {new Date(d.checkedAt).toLocaleString()}</p>}
         </div>
       )}
+    </div>
+  );
+}
+
+// The people on a domain: add (Cognito emails them an invite), resend, remove.
+function People({ domain }: { domain: string }) {
+  const [list, setList] = useState<{ people: PersonView[]; limit: number } | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ localPart: "", givenName: "", familyName: "", backupEmail: "" });
+  useEffect(() => { mailApi.people(domain).then(setList, e => setError(e instanceof Error ? e.message : "Couldn’t load people.")); }, [domain]);
+  const act = async (fn: () => Promise<void>) => { setBusy(true); setError(""); try { await fn(); } catch (e) { setError(e instanceof Error ? e.message : "Something went wrong."); } finally { setBusy(false); } };
+  if (!list) return <p className="t-body-sm text-m-muted">{error || "Loading people…"}</p>;
+  const input = "w-full px-3 py-2 rounded-m-lg bg-m-low text-m-text t-body-md border border-m-line focus:outline-none focus:ring-2 focus:ring-m-brand/30";
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.value });
+  return (
+    <div className="space-y-2 pt-1">
+      <div className="flex items-center justify-between"><b className="t-headline-sm text-m-text">People ({list.people.length}/{list.limit})</b>
+        {!adding && list.people.length < list.limit && <Btn tone="brand" onClick={() => setAdding(true)}>Add person</Btn>}</div>
+      {list.people.length === 0 && !adding && <p className="t-body-sm text-m-muted">Nobody has an address on {domain} yet.</p>}
+      {list.people.map(x => (
+        <div key={x.address} className="flex flex-wrap items-center justify-between gap-2 py-2 border-t border-m-line">
+          <div className="min-w-0"><b className="block t-body-md text-m-text truncate">{x.givenName} {x.familyName}</b><span className="t-body-sm text-m-muted break-all">{x.address}{x.status === "invited" ? ` · invited (${x.backupEmail})` : ""}</span></div>
+          <div className="flex gap-2">
+            {x.status === "invited" && <Btn onClick={() => { if (!busy) void act(async () => { await mailApi.resendInvite(domain, x.address); alert(`Invite sent again to ${x.backupEmail}.`); }); }}>Resend invite</Btn>}
+            <Btn tone="danger" onClick={() => {
+              if (!busy && confirm(`Remove ${x.address}?\n\nTheir sign-in stops now, and their mailbox and all its mail are deleted for good. This can’t be undone.`))
+                void act(async () => { await mailApi.removePerson(domain, x.address); setList({ ...list, people: list.people.filter(y => y.address !== x.address) }); });
+            }}>Remove</Btn>
+          </div>
+        </div>
+      ))}
+      {adding && (
+        <form className="rounded-m-lg bg-m-low/50 p-3 space-y-3" onSubmit={e => { e.preventDefault(); if (!busy) void act(async () => {
+          const p = await mailApi.addPerson(domain, form);
+          setList({ ...list, people: [...list.people, p] }); setForm({ localPart: "", givenName: "", familyName: "", backupEmail: "" }); setAdding(false);
+        }); }}>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <label><span className="t-label-sm text-m-muted block mb-1">First name</span><input value={form.givenName} onChange={set("givenName")} required maxLength={40} className={input} /></label>
+            <label><span className="t-label-sm text-m-muted block mb-1">Last name</span><input value={form.familyName} onChange={set("familyName")} required maxLength={40} className={input} /></label>
+            <label><span className="t-label-sm text-m-muted block mb-1">Address</span>
+              <span className="flex items-center gap-1"><input value={form.localPart} onChange={set("localPart")} required placeholder="ana" autoCapitalize="none" autoCorrect="off" spellCheck={false} className={input} /><span className="t-body-md text-m-muted whitespace-nowrap">@{domain}</span></span></label>
+            <label><span className="t-label-sm text-m-muted block mb-1">Their backup email</span><input type="email" value={form.backupEmail} onChange={set("backupEmail")} required placeholder="them@gmail.com" className={input} /></label>
+          </div>
+          <p className="t-body-sm text-m-muted">We’ll email them an invite at their backup email with a temporary password. They choose their own password when they first sign in. You won’t be able to read their mail, and only they can reset their password.</p>
+          <div className="flex gap-2">
+            <button type="submit" disabled={busy} className="px-3 py-2 rounded-m-lg t-headline-sm bg-m-brand text-m-on-brand hover:bg-m-brand-hover disabled:opacity-60">{busy ? "Adding…" : "Add and send invite"}</button>
+            <button type="button" onClick={() => setAdding(false)} className="px-3 py-2 rounded-m-lg t-headline-sm bg-m-low text-m-text hover:bg-m-mid">Cancel</button>
+          </div>
+        </form>
+      )}
+      {error && <p className="t-body-sm text-m-error" role="alert">{error}</p>}
     </div>
   );
 }

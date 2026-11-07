@@ -143,7 +143,8 @@ describe("inbound handler", () => {
     ddbBase.on(GetCommand).resolves({});
     await handler()(event({}, [MAILBOX, "x@other.com"]));
     expect(items).toHaveLength(0);
-    expect(ddbBase.commandCalls(GetCommand)).toHaveLength(1);
+    // Only our own recipient's mailbox is read; other.com is just checked for being a customer domain.
+    expect(ddbBase.commandCalls(GetCommand).filter(c => c.args[0].input.Key!.pk.startsWith("MAILBOX#"))).toHaveLength(1);
     expect(s3.commandCalls(DeleteObjectCommand)).toHaveLength(1);
   });
 
@@ -191,5 +192,22 @@ describe("inbound handler", () => {
     s3.on(GetObjectCommand).resolves({ Body: streamOf(body), Metadata: metadata });
     await expect(handler()(event())).rejects.toThrow();
     expect(items).toHaveLength(0);
+  });
+});
+
+describe("customer domains", () => {
+  it("delivers to active customer domains and ignores mail for any other domain SES accepted", async () => {
+    stubRaw();
+    const meta = { pk: "MAILBOX#ana@zetca.pro", sk: "META", address: "ana@zetca.pro", ownerSub: "sub-ana", displayName: "Ana", status: "active", createdAt: "x",
+      keyState: { version: 1, address: "ana@zetca.pro", primaryFingerprint: fingerprint, keys: [{ fingerprint, publicKey, privateKey: "locked", status: "active", createdAt: "x" }], recovery: null } };
+    ddbBase.on(GetCommand).callsFake(i => ({ Item: ({
+      "DOMAIN#zetca.pro|META": { type: "domain", domain: "zetca.pro", status: "active" },
+      "DOMAIN#pending.io|META": { type: "domain", domain: "pending.io", status: "pending" },
+      "MAILBOX#ana@zetca.pro|META": meta,
+      "MAILBOX#bob@pending.io|META": { ...meta, address: "bob@pending.io" },
+    } as Record<string, unknown>)[`${i.Key.pk}|${i.Key.sk}`] }));
+    await handler()(event({}, ["ana@zetca.pro", "bob@pending.io", "eve@stranger.org"]));
+    const stored = items.map(i => (i as { mailbox: string }).mailbox);
+    expect(stored).toEqual(["ana@zetca.pro"]);
   });
 });

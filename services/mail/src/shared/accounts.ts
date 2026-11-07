@@ -36,6 +36,29 @@ export function parseAddress(username: string, domain: string): { address: strin
   return { address: username, reserved: RESERVED.has(bare) || RESERVED_STEMS.some(s => bare.includes(s)) };
 }
 
+/** The part before @ for an address on a customer domain. Role names (info@, admin@) are fine: it's their domain. */
+export function parseLocalPart(raw: unknown): string {
+  const local = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (!LOCAL_PART.test(local)) throw new BadRequest("Addresses are 3–30 lowercase letters or numbers, with single dots, dashes or underscores between them");
+  return local;
+}
+
+/** A backup email for password resets: valid, and not on any of `refusedDomains` (or their subdomains). */
+export function parseBackupEmail(raw: unknown, refusedDomains: string[]): string {
+  const email = typeof raw === "string" ? raw.trim().toLowerCase() : "";
+  if (email.length > 254 || !EMAIL.test(email)) throw new BadRequest("Enter a valid backup email");
+  const host = email.split("@")[1]!;
+  if (refusedDomains.some(d => host === d || host.endsWith(`.${d}`))) throw new BadRequest("The backup email must be somewhere else (Gmail, Outlook…), so they can always reset their password");
+  return email;
+}
+
+/** A first or last name typed by a domain owner. */
+export function parseName(raw: unknown, which: "first" | "last"): string {
+  const name = typeof raw === "string" ? raw.trim().replace(/\s+/g, " ") : "";
+  if (!NAME.test(name)) throw new BadRequest(`Enter a ${which} name (letters, spaces, hyphens and apostrophes only)`);
+  return name;
+}
+
 const NAME = /^[\p{L}\p{M}](?:[\p{L}\p{M}' .-]{0,38}[\p{L}\p{M}.])?$/u;
 const EMAIL = /^[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+$/;
 const PHONE = /^\+[1-9]\d{6,14}$/;
