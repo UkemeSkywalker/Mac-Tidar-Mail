@@ -91,7 +91,10 @@ resource "aws_cognito_user_pool" "mail" {
     }
   }
 
-  lambda_config { pre_sign_up = aws_lambda_function.auth.arn }
+  lambda_config {
+    pre_sign_up    = aws_lambda_function.auth.arn
+    custom_message = aws_lambda_function.auth.arn # invite email for people on customer domains
+  }
 
   depends_on = [aws_sesv2_email_identity_policy.cognito]
 

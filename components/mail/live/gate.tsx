@@ -81,10 +81,14 @@ const MAIL_DOMAIN = "mactidar.com";
 const isMacTidarAddress = (v: string) => /@(?:[a-z0-9-]+\.)*mactidar\.com$/i.test(v.trim());
 
 /** The Cognito username for what was typed: the @mactidar.com address ("ada" works too). */
+// Big providers people use as backup emails; nobody's Mac Tidar Mail address is on them.
+const BACKUP_PROVIDERS = /@(?:gmail|googlemail|outlook|hotmail|live|yahoo|icloud|me|aol|proton|protonmail|gmx|zoho|yandex)\.[a-z.]+$/;
+
+/** A bare name means @mactidar.com; a full address can be on any domain connected to Mac Tidar Mail. */
 function toUsername(input: string): string {
   const v = input.trim().toLowerCase();
   if (!v.includes("@")) return `${v}@${MAIL_DOMAIN}`;
-  if (!v.endsWith(`@${MAIL_DOMAIN}`)) throw new Error(`Sign in with your @${MAIL_DOMAIN} address. Your backup email is only for password resets.`);
+  if (BACKUP_PROVIDERS.test(v)) throw new Error("Sign in with your Mac Tidar Mail address. Your backup email is only for password resets.");
   return v;
 }
 
@@ -151,7 +155,7 @@ function PasswordField({ label, hint, ...props }: { label: string; hint?: string
 function AddressField({ value, onChange, autoComplete }: { value: string; onChange: (v: string) => void; autoComplete: string }) {
   return (
     <label className="block">
-      <span className="t-label-md text-m-muted">Mac Tidar address</span>
+      <span className="t-label-md text-m-muted">Mac Tidar Mail address</span>
       <input name="address" type="text" inputMode="email" required value={value} onChange={e => onChange(e.target.value)} autoComplete={autoComplete}
         autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder={`you@${MAIL_DOMAIN}`}
         className="mt-1 w-full px-3 py-2.5 rounded-m-lg bg-m-low text-m-text t-body-md border border-m-line focus:outline-none focus:ring-2 focus:ring-m-brand/30" />

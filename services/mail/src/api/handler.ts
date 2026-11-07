@@ -4,18 +4,18 @@
 import { DeleteObjectsCommand, GetObjectCommand, ListObjectVersionsCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { ConditionalCheckFailedException, DynamoDBClient, TransactionCanceledException } from "@aws-sdk/client-dynamodb";
-import { DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, TransactWriteCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { BatchWriteCommand, DeleteCommand, DynamoDBDocumentClient, GetCommand, type QueryCommandOutput, PutCommand, QueryCommand, TransactWriteCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 import { normalizeAddress } from "../crypto/keys";
 import { CreateEmailIdentityCommand, DeleteEmailIdentityCommand, GetEmailIdentityCommand, SendEmailCommand, SESv2Client } from "@aws-sdk/client-sesv2";
 import { promises as nodeDns } from "node:dns";
 import { randomBytes } from "node:crypto";
-import { AdminGetUserCommand, CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-provider";
+import { AdminCreateUserCommand, AdminDeleteUserCommand, AdminGetUserCommand, CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-provider";
 import { draftSk, folderGsi1, mailboxPk, META_SK, ownerGsi1, SETTINGS_SK, type DraftItem, type Folder, type MailboxMeta, type MessageItem, type SettingsItem } from "../shared/table";
 import { Conflict as SendConflict, sendMessage } from "./send";
 import { validateSend } from "./send-validate";
-import { displayNameOf, NEW_MAILBOX_DAILY_LIMIT, parseAddress, reservationKey, type Reservation } from "../shared/accounts";
-import { ALL_DOMAINS, checkDns, dnsRecords, domainKey, domainPeopleGsi1, domainsGsi1, evaluate, MAX_DOMAINS_PER_ACCOUNT, NO_CHECKS, parseDisplayName, parseDomain, pendingExpiry, type DomainItem, type Resolver } from "../shared/domains";
+import { displayNameOf, NEW_MAILBOX_DAILY_LIMIT, parseAddress, parseBackupEmail, parseLocalPart, parseName, reservationKey, type Reservation } from "../shared/accounts";
+import { ALL_DOMAINS, ALL_PURGES, DOMAIN_DAILY_RECIPIENT_LIMIT, checkDns, dnsRecords, domainDirectory, domainKey, domainsGsi1, evaluate, MAX_DOMAINS_PER_ACCOUNT, MAX_PEOPLE_PER_DOMAIN, NO_CHECKS, parseDisplayName, parseDomain, pendingExpiry, PERSON_PREFIX, personKey, purgeKey, type DomainItem, type PersonItem, type PurgeItem, type Resolver } from "../shared/domains";
 import { BadRequest, FOLDERS, validateKeyState, validatePatch, validateSettings, validateSks } from "./validate";
 
 /** Sessions per account; each signed-in browser holds one. */
@@ -32,11 +32,21 @@ interface SessionItem { pk: string; sk: string; gsi1pk: string; gsi1sk: string; 
 export interface ApiConfig { table: string; bucket: string; configurationSet: string; localDomains: string[]; region: string; signupDomain: string }
 /** The parts of a Mail account the API needs (read from the user pool). */
 export interface AccountInfo { sub: string; email: string; emailVerified: boolean; givenName: string; familyName: string }
+/** Creating and removing accounts for people on customer domains (Cognito admin API). */
+export interface UserAdmin {
+  /** Creates the account and has Cognito email an invite with a temporary password. */
+  invite(address: string, p: { email: string; givenName: string; familyName: string }): Promise<void>;
+  /** Sends the invite again; only works until they first sign in. */
+  resendInvite(address: string, email: string): Promise<void>;
+  remove(address: string): Promise<void>;
+}
 export interface ApiDeps {
   ddb: DynamoDBDocumentClient; s3: S3Client; ses: SESv2Client; config: ApiConfig;
   account: (username: string) => Promise<AccountInfo | null>;
   /** DNS lookups for domain checks (node:dns by default). */
   dns?: Resolver;
+  /** Accounts for people on customer domains. */
+  users?: UserAdmin;
   presign?: (s3: S3Client, cmd: GetObjectCommand) => Promise<string>;
 }
 type Event = APIGatewayProxyEventV2WithJWTAuthorizer;
@@ -79,8 +89,10 @@ function parseBody(event: Event, maxChars = 600_000): unknown {
   catch { throw new BadRequest("Body must be JSON"); }
 }
 
-export function createHandler({ ddb, s3, ses, config, account, dns = nodeDns, presign = (c, cmd) => getSignedUrl(c, cmd, { expiresIn: 300 }) }: ApiDeps) {
+export function createHandler({ ddb, s3, ses, config, account, users, dns = nodeDns, presign = (c, cmd) => getSignedUrl(c, cmd, { expiresIn: 300 }) }: ApiDeps) {
   const T = config.table;
+
+  const directory = domainDirectory(ddb, T, config.localDomains);
 
   /** The caller's address: their username in the Mail user pool. */
   function usernameOf(event: Event): string {
@@ -154,8 +166,133 @@ export function createHandler({ ddb, s3, ses, config, account, dns = nodeDns, pr
       }
       start = page.LastEvaluatedKey;
     } while (start);
-    console.log(JSON.stringify({ event: "domains-checked", ...counts }));
-    return counts;
+    let purged = 0;
+    start = undefined;
+    do {
+      const page: QueryCommandOutput = await ddb.send(new QueryCommand({ TableName: T, IndexName: "gsi2", KeyConditionExpression: "gsi2pk = :p", ExpressionAttributeValues: { ":p": ALL_PURGES }, ExclusiveStartKey: start }));
+      for (const x of (page.Items ?? []) as PurgeItem[]) {
+        try { await purgeMailbox(x); purged++; }
+        catch (e) { counts.failed++; console.error(JSON.stringify({ event: "purge-failed", name: (e as Error).name })); }
+      }
+      start = page.LastEvaluatedKey;
+    } while (start);
+    console.log(JSON.stringify({ event: "domains-checked", ...counts, purged }));
+    return { ...counts, purged };
+  }
+
+  async function listPeople(domain: string): Promise<PersonItem[]> {
+    const out: PersonItem[] = [];
+    let start: Record<string, unknown> | undefined;
+    do {
+      const page = await ddb.send(new QueryCommand({ TableName: T, KeyConditionExpression: "pk = :p AND begins_with(sk, :s)", ExpressionAttributeValues: { ":p": domainKey(domain).pk, ":s": PERSON_PREFIX }, ExclusiveStartKey: start }));
+      out.push(...(page.Items ?? []) as PersonItem[]);
+      start = page.LastEvaluatedKey;
+    } while (start);
+    return out;
+  }
+
+  async function domainPerson(d: DomainItem, raw: string | undefined): Promise<PersonItem> {
+    let address: string;
+    try { address = normalizeAddress(decodeURIComponent(raw ?? "")); } catch { throw new NotFound(); }
+    if (address.split("@")[1] !== d.domain) throw new NotFound();
+    const { Item } = await ddb.send(new GetCommand({ TableName: T, Key: personKey(d.domain, address) }));
+    if (!Item) throw new NotFound();
+    return Item as PersonItem;
+  }
+
+  const publicPerson = (x: PersonItem) => ({ address: x.address, givenName: x.givenName, familyName: x.familyName, backupEmail: x.backupEmail, status: x.status, createdAt: x.createdAt, activatedAt: x.activatedAt ?? null });
+
+  /**
+   * Removes a person: their sign-in goes now and their mailbox stops working now; the stored
+   * (still encrypted) mail is deleted by the daily task, so a big mailbox can't time this out.
+   */
+  async function removePerson(person: PersonItem) {
+    const { Item } = await ddb.send(new GetCommand({ TableName: T, Key: { pk: mailboxPk(person.address), sk: META_SK } }));
+    const meta = Item as MailboxMeta | undefined;
+    if (meta) {
+      const purge: PurgeItem = { ...purgeKey(person.address), address: person.address, ownerSub: meta.ownerSub, createdAt: new Date().toISOString(), gsi2pk: ALL_PURGES, gsi2sk: person.address };
+      await ddb.send(new PutCommand({ TableName: T, Item: purge }));
+      await ddb.send(new UpdateCommand({ TableName: T, Key: { pk: meta.pk, sk: META_SK }, UpdateExpression: "SET #s = :d", ExpressionAttributeNames: { "#s": "status" }, ExpressionAttributeValues: { ":d": "deleted" } }));
+    }
+    await users!.remove(person.address);
+    await ddb.send(new DeleteCommand({ TableName: T, Key: personKey(person.domain, person.address) }));
+  }
+
+  /** Our own domains plus any active customer domains among this message's recipients. */
+  async function localDomainsFor(body: unknown): Promise<string[]> {
+    const b = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+    const raw = ["to", "cc", "bcc"].flatMap(k => Array.isArray(b[k]) ? (b[k] as unknown[]).slice(0, 60) : []).filter((a): a is string => typeof a === "string");
+    const domains = [...new Set(raw.map(a => a.trim().toLowerCase().split("@")[1] ?? "").filter(d => d && !directory.isOwn(d)))].slice(0, 60);
+    const active = await Promise.all(domains.map(async d => (await directory.isLocal(d)) ? d : null));
+    return [...config.localDomains, ...active.filter((d): d is string => !!d)];
+  }
+
+  /** Per-domain daily recipient cap, on top of each mailbox's own cap. */
+  async function chargeDomainQuota(domain: string, recipients: number) {
+    try {
+      await ddb.send(new UpdateCommand({
+        TableName: T, Key: { pk: domainKey(domain).pk, sk: `QUOTA#${new Date().toISOString().slice(0, 10)}` },
+        UpdateExpression: "ADD recipients :n SET expiresAt = :exp",
+        ConditionExpression: "attribute_not_exists(recipients) OR recipients <= :max",
+        ExpressionAttributeValues: { ":n": recipients, ":max": DOMAIN_DAILY_RECIPIENT_LIMIT - recipients, ":exp": Math.floor(Date.now() / 1000) + 3 * 86400 },
+      }));
+    } catch (e) {
+      if (e instanceof ConditionalCheckFailedException) throw new BadRequest(`@${domain} has reached its daily sending limit (${DOMAIN_DAILY_RECIPIENT_LIMIT} recipients per day)`);
+      throw e;
+    }
+  }
+
+  /** First sign-in of someone a domain owner added: creates their mailbox and marks them active. */
+  async function claimDomainMailbox(address: string, sub: string) {
+    const domain = address.split("@")[1]!;
+    const [d, { Item }] = await Promise.all([directory.lookup(domain), ddb.send(new GetCommand({ TableName: T, Key: personKey(domain, address) }))]);
+    const person = Item as PersonItem | undefined;
+    if (!person || d?.status !== "active") throw new Conflict("This address isn’t available right now. Ask whoever manages it.");
+    const now = new Date().toISOString();
+    const mailbox: MailboxMeta = { pk: mailboxPk(address), sk: META_SK, gsi1pk: ownerGsi1(sub), gsi1sk: mailboxPk(address), address, ownerSub: sub,
+      displayName: displayNameOf(person), status: "active", createdAt: now, createdBy: "domain", dailyRecipientLimit: NEW_MAILBOX_DAILY_LIMIT };
+    try {
+      await ddb.send(new TransactWriteCommand({ TransactItems: [
+        { Put: { TableName: T, Item: { pk: `OWNER#${sub}`, sk: "CLAIM", address, createdAt: now }, ConditionExpression: "attribute_not_exists(pk)" } },
+        { Put: { TableName: T, Item: mailbox, ConditionExpression: "attribute_not_exists(pk)" } },
+        { Update: { TableName: T, Key: personKey(domain, address), UpdateExpression: "SET #s = :a, activatedAt = :t", ConditionExpression: "attribute_exists(pk)", ExpressionAttributeNames: { "#s": "status" }, ExpressionAttributeValues: { ":a": "active", ":t": now } } },
+      ] }));
+    } catch (e) {
+      if (e instanceof TransactionCanceledException) throw new Conflict("This account already has a mailbox");
+      throw e;
+    }
+    console.log(JSON.stringify({ event: "mailbox-claimed", domain: "custom" }));
+    return { mailbox: { address, displayName: mailbox.displayName, keyState: null, keyVersion: 0 } };
+  }
+
+  /** Deletes a removed person's mailbox: every table item and every S3 object version. */
+  async function purgeMailbox(x: PurgeItem) {
+    const pk = mailboxPk(x.address);
+    let start: Record<string, unknown> | undefined;
+    do {
+      const page: QueryCommandOutput = await ddb.send(new QueryCommand({ TableName: T, KeyConditionExpression: "pk = :p", ExpressionAttributeValues: { ":p": pk }, ProjectionExpression: "pk, sk", ExclusiveStartKey: start }));
+      const keys = (page.Items ?? []) as { pk: string; sk: string }[];
+      for (let i = 0; i < keys.length; i += 25) {
+        let pending = keys.slice(i, i + 25).map(k => ({ DeleteRequest: { Key: k } }));
+        for (let tries = 0; pending.length && tries < 5; tries++) {
+          const r = await ddb.send(new BatchWriteCommand({ RequestItems: { [T]: pending } }));
+          pending = (r.UnprocessedItems?.[T] ?? []) as typeof pending;
+        }
+        if (pending.length) throw new Error("Couldn't delete every mailbox item");
+      }
+      start = page.LastEvaluatedKey;
+    } while (start);
+    for (const prefix of [`msg/${x.address}/`, `att/${x.address}/`]) {
+      let keyMarker: string | undefined, versionMarker: string | undefined;
+      do {
+        const r = await s3.send(new ListObjectVersionsCommand({ Bucket: config.bucket, Prefix: prefix, KeyMarker: keyMarker, VersionIdMarker: versionMarker }));
+        const objects = [...(r.Versions ?? []), ...(r.DeleteMarkers ?? [])].map(v => ({ Key: v.Key!, VersionId: v.VersionId }));
+        if (objects.length) await s3.send(new DeleteObjectsCommand({ Bucket: config.bucket, Delete: { Objects: objects, Quiet: true } }));
+        keyMarker = r.IsTruncated ? r.NextKeyMarker : undefined; versionMarker = r.IsTruncated ? r.NextVersionIdMarker : undefined;
+      } while (keyMarker);
+    }
+    if (x.ownerSub) await ddb.send(new DeleteCommand({ TableName: T, Key: { pk: `OWNER#${x.ownerSub}`, sk: "CLAIM" } }));
+    await ddb.send(new DeleteCommand({ TableName: T, Key: purgeKey(x.address) }));
   }
 
   /** What the owner sees: status, checks and the records to add. Never the owner's sub. */
@@ -198,11 +335,12 @@ export function createHandler({ ddb, s3, ses, config, account, dns = nodeDns, pr
         // account; the OWNER#…/CLAIM marker makes that atomic. A reserved address (for example an
         // existing mailbox moving to its own login) needs a reservation for this backup email.
         const username = usernameOf(event);
-        const { address, reserved } = parseAddress(username, config.signupDomain);
         const { Items = [] } = await ddb.send(new QueryCommand({ TableName: T, IndexName: "gsi1", KeyConditionExpression: "gsi1pk = :o", ExpressionAttributeValues: { ":o": ownerGsi1(sub) }, Limit: 1 }));
         if (Items.length) throw new Conflict("This account already has a mailbox");
         const acct = await account(username);
         if (!acct || acct.sub !== sub || !acct.emailVerified) throw new Conflict("Verify your backup email first");
+        if (normalizeAddress(username).split("@")[1] !== config.signupDomain) return json(201, await claimDomainMailbox(normalizeAddress(username), sub));
+        const { address, reserved } = parseAddress(username, config.signupDomain);
 
         const [{ Item: res }, { Item: existing }] = await Promise.all([
           ddb.send(new GetCommand({ TableName: T, Key: reservationKey(address) })),
@@ -355,7 +493,7 @@ export function createHandler({ ddb, s3, ses, config, account, dns = nodeDns, pr
         // Public key lookup for Mac Tidar recipients, so the browser can encrypt end to end.
         let address: string;
         try { address = normalizeAddress(q.address ?? ""); } catch { throw new NotFound(); }
-        if (!config.localDomains.includes(address.split("@")[1] ?? "")) throw new NotFound();
+        if (!(await directory.isLocal(address.split("@")[1] ?? ""))) throw new NotFound();
         const { Item } = await ddb.send(new GetCommand({ TableName: T, Key: { pk: mailboxPk(address), sk: META_SK } }));
         const meta = Item as MailboxMeta | undefined;
         const key = meta?.status === "active" ? meta.keyState?.keys.find(k => k.fingerprint === meta.keyState?.primaryFingerprint) : undefined;
@@ -365,7 +503,12 @@ export function createHandler({ ddb, s3, ses, config, account, dns = nodeDns, pr
 
       case "POST /v1/mailboxes/{address}/send": {
         const meta = await ownedMailbox(sub, p.address);
-        const req = validateSend(parseBody(event, 6_000_000), config.localDomains);
+        const senderDomain = meta.address.split("@")[1]!;
+        const customDomain = !directory.isOwn(senderDomain);
+        if (customDomain && !(await directory.canSendFrom(senderDomain))) throw new Conflict(`Sending from @${senderDomain} is paused. Whoever manages the domain can see why in Settings, Domains.`);
+        const body = parseBody(event, 6_000_000);
+        const req = validateSend(body, await localDomainsFor(body));
+        if (customDomain) await chargeDomainQuota(senderDomain, new Set([...req.to, ...req.cc, ...req.bcc]).size);
         const sent = await sendMessage({ ddb, s3, ses, table: T, bucket: config.bucket, configurationSet: config.configurationSet, region: config.region }, meta, req);
         return json(200, { message: publicMessage(sent) });
       }
@@ -481,10 +624,66 @@ export function createHandler({ ddb, s3, ses, config, account, dns = nodeDns, pr
         return json(200, publicDomain(await refreshDomain(d)));
       }
 
+      // ── People on your domain ─────────────────────────────────────────────────────────
+      // The owner adds people; Cognito emails each an invite with a temporary password. Their
+      // mailbox key comes from the password *they* choose, so the owner can never read their mail.
+      case "GET /v1/domains/{domain}/people": {
+        const d = await ownedDomain(sub, p.domain);
+        const people = await listPeople(d.domain);
+        return json(200, { people: people.map(publicPerson), limit: MAX_PEOPLE_PER_DOMAIN });
+      }
+
+      case "POST /v1/domains/{domain}/people": {
+        if (!users) throw new NotFound();
+        const d = await ownedDomain(sub, p.domain);
+        if (d.status !== "active") throw new Conflict("Finish connecting this domain first.");
+        const body = (parseBody(event, 1000) ?? {}) as Record<string, unknown>;
+        const address = `${parseLocalPart(body.localPart)}@${d.domain}`;
+        const person: PersonItem = {
+          ...personKey(d.domain, address), type: "person", address, domain: d.domain, status: "invited", createdAt: new Date().toISOString(),
+          givenName: parseName(body.givenName, "first"), familyName: parseName(body.familyName, "last"),
+          backupEmail: parseBackupEmail(body.backupEmail, [d.domain, ...config.localDomains]),
+        };
+        const count = (await ddb.send(new QueryCommand({ TableName: T, KeyConditionExpression: "pk = :p AND begins_with(sk, :s)", ExpressionAttributeValues: { ":p": d.pk, ":s": PERSON_PREFIX }, Select: "COUNT" }))).Count ?? 0;
+        if (count >= MAX_PEOPLE_PER_DOMAIN) throw new Conflict(`A domain can have up to ${MAX_PEOPLE_PER_DOMAIN} people for now.`);
+        const { Item: existing } = await ddb.send(new GetCommand({ TableName: T, Key: { pk: mailboxPk(address), sk: META_SK } }));
+        if (existing) throw new Conflict((existing as MailboxMeta).status === "deleted" ? "That address was just removed. Try again tomorrow." : "That address is taken.");
+        // The person record goes first: the sign-up trigger only lets an invite through when it exists.
+        try { await ddb.send(new PutCommand({ TableName: T, Item: person, ConditionExpression: "attribute_not_exists(pk)" })); }
+        catch (e) { if (e instanceof ConditionalCheckFailedException) throw new Conflict("That address is taken."); throw e; }
+        try {
+          await users.invite(address, { email: person.backupEmail, givenName: person.givenName, familyName: person.familyName });
+        } catch (e) {
+          await ddb.send(new DeleteCommand({ TableName: T, Key: personKey(d.domain, address) }));
+          if ((e as Error).name === "UsernameExistsException") throw new Conflict("That address is taken.");
+          throw e;
+        }
+        console.log(JSON.stringify({ event: "person-invited" }));
+        return json(201, publicPerson(person));
+      }
+
+      case "POST /v1/domains/{domain}/people/{address}/invite": {
+        if (!users) throw new NotFound();
+        const d = await ownedDomain(sub, p.domain);
+        const person = await domainPerson(d, p.address);
+        if (person.status !== "invited") throw new Conflict("They’ve already signed in.");
+        try { await users.resendInvite(person.address, person.backupEmail); }
+        catch (e) { if ((e as Error).name === "UnsupportedUserStateException") throw new Conflict("They’ve already signed in."); throw e; }
+        return json(200, { sent: true });
+      }
+
+      case "DELETE /v1/domains/{domain}/people/{address}": {
+        if (!users) throw new NotFound();
+        const d = await ownedDomain(sub, p.domain);
+        const person = await domainPerson(d, p.address);
+        await removePerson(person);
+        console.log(JSON.stringify({ event: "person-removed" }));
+        return json(200, { deleted: true });
+      }
+
       case "DELETE /v1/domains/{domain}": {
         const d = await ownedDomain(sub, p.domain);
-        const people = (await ddb.send(new QueryCommand({ TableName: T, IndexName: "gsi1", KeyConditionExpression: "gsi1pk = :o", ExpressionAttributeValues: { ":o": domainPeopleGsi1(d.domain) }, Select: "COUNT" }))).Count ?? 0;
-        if (people > 0) throw new Conflict("Remove everyone on this domain first.");
+        if ((await listPeople(d.domain)).length > 0) throw new Conflict("Remove everyone on this domain first.");
         await removeDomainIdentity(d.domain);
         await ddb.send(new DeleteCommand({ TableName: T, Key: domainKey(d.domain), ConditionExpression: "ownerSub = :s", ExpressionAttributeValues: { ":s": sub } }));
         console.log(JSON.stringify({ event: "domain-removed" }));
@@ -538,10 +737,28 @@ async function poolAccount(cognito: CognitoIdentityProviderClient, poolId: strin
   }
 }
 
+/** Customer-domain accounts. The username is the address; the email attribute is their backup email. */
+function poolUsers(cognito: CognitoIdentityProviderClient, poolId: string): UserAdmin {
+  return {
+    async invite(address, p) {
+      // email_verified: only someone who receives the invite (at that email) can finish signing in.
+      await cognito.send(new AdminCreateUserCommand({ UserPoolId: poolId, Username: address, DesiredDeliveryMediums: ["EMAIL"],
+        UserAttributes: [{ Name: "email", Value: p.email }, { Name: "email_verified", Value: "true" }, { Name: "given_name", Value: p.givenName }, { Name: "family_name", Value: p.familyName }] }));
+    },
+    async resendInvite(address) {
+      await cognito.send(new AdminCreateUserCommand({ UserPoolId: poolId, Username: address, MessageAction: "RESEND", DesiredDeliveryMediums: ["EMAIL"] }));
+    },
+    async remove(address) {
+      await cognito.send(new AdminDeleteUserCommand({ UserPoolId: poolId, Username: address })).catch(e => { if ((e as Error).name !== "UserNotFoundException") throw e; });
+    },
+  };
+}
+
 let cached: ReturnType<typeof createHandler> | undefined;
 export const handler = (event: Event | ScheduledTask) => {
-  cached ??= createHandler({
-    account: (cognito => (username: string) => poolAccount(cognito, env("MAIL_USER_POOL_ID"), username))(new CognitoIdentityProviderClient({})),
+  cached ??= ((cognito: CognitoIdentityProviderClient) => createHandler({
+    account: username => poolAccount(cognito, env("MAIL_USER_POOL_ID"), username),
+    users: poolUsers(cognito, env("MAIL_USER_POOL_ID")),
     ddb: DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } }),
     s3: new S3Client({}),
     ses: new SESv2Client({}),
@@ -550,7 +767,7 @@ export const handler = (event: Event | ScheduledTask) => {
       localDomains: env("LOCAL_MAIL_DOMAINS").split(",").map(d => d.trim().toLowerCase()),
       signupDomain: env("SIGNUP_DOMAIN").trim().toLowerCase(),
     },
-  });
+  }))(new CognitoIdentityProviderClient({}));
   // The daily schedule invokes this function directly; API Gateway events always carry routeKey.
   if (!("routeKey" in event)) {
     if (event.task === "check-domains") return cached.checkAllDomains();

@@ -11,6 +11,7 @@ import { encryptInboundMessage } from "../crypto/inbound";
 import { normalizeAddress } from "../crypto/keys";
 import { folderGsi1, mailboxPk, META_SK, messageSk, threadGsi2, type MailboxMeta, type MessageItem } from "../shared/table";
 import { notifyMailboxes } from "../shared/notify";
+import { domainDirectory } from "../shared/domains";
 import { categorize, decide, type Verdicts } from "./policy";
 import { decryptSesObject } from "./raw-decrypt";
 import { threadId, threadRoot } from "./thread";
@@ -34,6 +35,9 @@ const refList = (refs?: string | string[], inReplyTo?: string) =>
   [...new Set([...(Array.isArray(refs) ? refs : refs ? refs.split(/\s+/) : []), ...(inReplyTo ? [inReplyTo] : [])].filter(Boolean))].slice(-50);
 
 export function createHandler({ s3, kms, ddb, config, log = e => console.log(JSON.stringify(e)) }: InboundDeps) {
+  // Mac Tidar's domains plus every active customer domain.
+  const directory = domainDirectory(ddb, config.table, config.localDomains);
+  const ours = async (domain: string) => config.receivingDomains.includes(domain) || await directory.isLocal(domain);
   async function processRecord(record: SESEventRecord) {
     const { mail, receipt } = record.ses;
     const sesId = mail.messageId;
@@ -54,14 +58,18 @@ export function createHandler({ s3, kms, ddb, config, log = e => console.log(JSO
         dkim: receipt.dkimVerdict?.status ?? "DISABLED",
         dmarc: receipt.dmarcVerdict?.status ?? "DISABLED",
       };
-      const disposition = decide(verdicts, fromAddress, config.localDomains);
+      // A sender on one of our domains must pass DMARC, or it's spoofing; that includes customer domains.
+      const fromDomain = domainOf(fromAddress);
+      const disposition = decide(verdicts, fromAddress, await directory.isLocal(fromDomain) ? [...config.localDomains, fromDomain] : config.localDomains);
       if (disposition.action === "drop") {
         await deleteRaw();
         log({ event: "dropped", sesId, reason: disposition.reason });
         return;
       }
 
-      const recipients = [...new Set(receipt.recipients.map(normalizeAddress))].filter(r => config.receivingDomains.includes(domainOf(r)));
+      // SES accepts mail for every verified domain; only deliver to ours that are active.
+      const candidates = [...new Set(receipt.recipients.map(normalizeAddress))];
+      const recipients = (await Promise.all(candidates.map(async r => (await ours(domainOf(r))) ? r : null))).filter((r): r is string => !!r);
       const receiptTime = receipt.timestamp ?? mail.timestamp;
       const receivedAt = new Date(receiptTime).toISOString();
       const root = threadRoot(parsed.messageId, parsed.inReplyTo, parsed.references);

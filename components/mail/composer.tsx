@@ -215,7 +215,7 @@ export function Composer() {
                 <div className="flex flex-col min-w-0">
                   <span className="t-headline-sm text-m-text font-semibold">{account.name}</span>
                   <span className="t-label-md text-m-primary font-medium">{account.role}</span>
-                  <div className="flex flex-wrap items-center gap-space-xs text-m-muted t-body-sm mt-0.5"><span>{account.email}</span><span>•</span><span className="text-m-secondary font-medium">mactidar.com</span></div>
+                  <div className="flex flex-wrap items-center gap-space-xs text-m-muted t-body-sm mt-0.5"><span>{account.email}</span><span>•</span><span className="text-m-secondary font-medium">{account.email.split("@")[1]}</span></div>
                 </div>
               </div>
             )}

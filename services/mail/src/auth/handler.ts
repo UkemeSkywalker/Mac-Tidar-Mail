@@ -1,15 +1,18 @@
 // Mail user pool Lambda.
 // - Pre-sign-up trigger: refuses sign-ups whose address is malformed, reserved or taken, or whose
 //   profile fails validation. Cognito then emails the code to the backup address.
+// - Invites for customer domains (AdminCreateUser): only for a person their domain's owner added,
+//   on an active domain. The custom-message trigger writes the invite email.
 // - Daily schedule: deletes accounts left unconfirmed for over a day, so nobody can hold an
 //   address by starting a sign-up and never finishing it.
 // Never logs names, emails or other profile fields.
 import { AdminDeleteUserCommand, CognitoIdentityProviderClient, ListUsersCommand } from "@aws-sdk/client-cognito-identity-provider";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand } from "@aws-sdk/lib-dynamodb";
-import type { PreSignUpTriggerEvent } from "aws-lambda";
+import type { CustomMessageTriggerEvent, PreSignUpTriggerEvent } from "aws-lambda";
 import { parseAddress, reservationKey, validateProfile, type Reservation } from "../shared/accounts";
 import { mailboxPk, META_SK } from "../shared/table";
+import { domainKey, personKey, type DomainItem } from "../shared/domains";
 
 export interface AuthConfig { table: string; signupDomain: string; localDomains: string[] }
 export interface AuthDeps { ddb: DynamoDBDocumentClient; cognito: CognitoIdentityProviderClient; config: AuthConfig; now?: () => Date }
@@ -24,6 +27,7 @@ export function createHandler({ ddb, cognito, config, now = () => new Date() }: 
     if (event.triggerSource === "PreSignUp_ExternalProvider") throw new Error("Sign in with your Mac Tidar address");
     const username = event.userName;
     if (username !== username.trim().toLowerCase()) throw new Error("Addresses must be lowercase");
+    if (event.triggerSource === "PreSignUp_AdminCreateUser") return invited(event);
     const { address, reserved } = parseAddress(username, config.signupDomain);
     const profile = validateProfile(event.request.userAttributes, config.localDomains, now());
 
@@ -38,6 +42,41 @@ export function createHandler({ ddb, cognito, config, now = () => new Date() }: 
       if (reserved) throw new Error("That address is reserved. Please choose another.");
     }
     console.log(JSON.stringify({ event: "pre-sign-up-ok", reserved: reservedForThisEmail }));
+    return event;
+  }
+
+  /** An account the API creates for someone a domain owner added. Nothing else may create one. */
+  async function invited(event: PreSignUpTriggerEvent) {
+    const address = event.userName, domain = address.split("@")[1] ?? "";
+    const [{ Item: d }, { Item: person }, { Item: meta }] = await Promise.all([
+      ddb.send(new GetCommand({ TableName: config.table, Key: domainKey(domain) })),
+      ddb.send(new GetCommand({ TableName: config.table, Key: personKey(domain, address) })),
+      ddb.send(new GetCommand({ TableName: config.table, Key: { pk: mailboxPk(address), sk: META_SK } })),
+    ]);
+    if ((d as DomainItem | undefined)?.status !== "active" || !person || meta) throw new Error("This address can't be created.");
+    console.log(JSON.stringify({ event: "pre-sign-up-invite-ok" }));
+    return event;
+  }
+
+  /** The invite email for someone added to a customer domain. Other messages use the pool's templates. */
+  async function customMessage(event: CustomMessageTriggerEvent) {
+    if (event.triggerSource !== "CustomMessage_AdminCreateUser") return event;
+    const domain = event.userName.split("@")[1] ?? "";
+    const { Item } = await ddb.send(new GetCommand({ TableName: config.table, Key: domainKey(domain) }));
+    // The message is sent as HTML: escape the owner-chosen name (validation already refuses < and >).
+    const name = ((Item as DomainItem | undefined)?.displayName ?? domain).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const { codeParameter, usernameParameter } = event.request;
+    event.response.emailSubject = `You’ve been added to ${(Item as DomainItem | undefined)?.displayName ?? domain}’s email`;
+    event.response.emailMessage = [
+      `Hello,`, ``,
+      `${name} has given you an email address on Mac Tidar Mail:`, ``,
+      `Your address: ${usernameParameter}`,
+      `Temporary password: ${codeParameter}`, ``,
+      `Sign in at mail.${config.signupDomain} within 3 days, then choose your own password. Only you will know it: your mail is encrypted with a key made from it, so nobody else can read your mail, not ${name} and not Mac Tidar.`, ``,
+      `This email is your backup address. It's only used to reset your password; you can't sign in with it.`, ``,
+      `If you weren't expecting this, you can ignore it.`, ``,
+      `Mac Tidar Mail`,
+    ].join("<br>");
     return event;
   }
 
@@ -58,12 +97,13 @@ export function createHandler({ ddb, cognito, config, now = () => new Date() }: 
     return { deleted };
   }
 
-  return async (event: PreSignUpTriggerEvent | CleanupEvent) => {
+  return async (event: PreSignUpTriggerEvent | CustomMessageTriggerEvent | CleanupEvent) => {
     if ("task" in event) {
       if (event.task === "cleanup-unconfirmed") return cleanupUnconfirmed(event.userPoolId);
       throw new Error("Unknown task");
     }
-    if (event.triggerSource?.startsWith("PreSignUp_")) return preSignUp(event);
+    if (event.triggerSource?.startsWith("PreSignUp_")) return preSignUp(event as PreSignUpTriggerEvent);
+    if (event.triggerSource?.startsWith("CustomMessage_")) return customMessage(event as CustomMessageTriggerEvent);
     return event; // other triggers aren't configured; pass through unchanged
   };
 }
@@ -75,7 +115,7 @@ function env(name: string): string {
 }
 
 let cached: ReturnType<typeof createHandler> | undefined;
-export const handler = (event: PreSignUpTriggerEvent | CleanupEvent) => {
+export const handler = (event: PreSignUpTriggerEvent | CustomMessageTriggerEvent | CleanupEvent) => {
   cached ??= createHandler({
     ddb: DynamoDBDocumentClient.from(new DynamoDBClient({})),
     cognito: new CognitoIdentityProviderClient({}),
