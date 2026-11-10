@@ -118,7 +118,7 @@ resource "aws_iam_role_policy" "inbound" {
 resource "aws_lambda_function" "inbound" {
   function_name    = local.function_name
   role             = aws_iam_role.inbound.arn
-  runtime          = "nodejs22.x"
+  runtime          = "nodejs26.x"
   architectures    = ["arm64"]
   handler          = "index.handler"
   filename         = data.archive_file.inbound.output_path

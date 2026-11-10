@@ -169,7 +169,7 @@ resource "aws_iam_role_policy" "api" {
 resource "aws_lambda_function" "api" {
   function_name    = local.function_name
   role             = aws_iam_role.api.arn
-  runtime          = "nodejs22.x"
+  runtime          = "nodejs26.x"
   architectures    = ["arm64"]
   handler          = "index.handler"
   filename         = data.archive_file.api.output_path
@@ -355,7 +355,7 @@ resource "aws_iam_role_policy" "events" {
 resource "aws_lambda_function" "events" {
   function_name    = "mactidar-mail-ses-events"
   role             = aws_iam_role.events.arn
-  runtime          = "nodejs22.x"
+  runtime          = "nodejs26.x"
   architectures    = ["arm64"]
   handler          = "index.handler"
   filename         = data.archive_file.events.output_path
