@@ -189,7 +189,7 @@ resource "aws_iam_role_policy" "auth" {
 resource "aws_lambda_function" "auth" {
   function_name    = local.function_name
   role             = aws_iam_role.auth.arn
-  runtime          = "nodejs22.x"
+  runtime          = "nodejs26.x"
   architectures    = ["arm64"]
   handler          = "index.handler"
   filename         = data.archive_file.auth.output_path

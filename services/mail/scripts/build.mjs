@@ -12,7 +12,7 @@ for (const [name, entry] of Object.entries(lambdas)) {
     outfile: `dist/${name}/index.mjs`,
     bundle: true,
     platform: "node",
-    target: "node22",
+    target: "node26",
     format: "esm",
     banner: { js: 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);' },
     minify: true,
