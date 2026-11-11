@@ -133,9 +133,9 @@ describe("invite trigger", () => {
     table({ "DOMAIN#zetca.pro|META": { ...DOMAIN, status: "pending" }, "DOMAIN#zetca.pro|PERSON#ana@zetca.pro": PERSON });
     await expect(auth()(pre("ana@zetca.pro"))).rejects.toThrow("can't be created");
   });
-  it("still refuses self sign-up on a customer domain", async () => {
+  it("refuses a Business sign-up on a domain that's already verified", async () => {
     table({ "DOMAIN#zetca.pro|META": DOMAIN, "DOMAIN#zetca.pro|PERSON#ana@zetca.pro": PERSON });
-    await expect(auth()(pre("ana@zetca.pro", "PreSignUp_SignUp"))).rejects.toThrow("@mactidar.com");
+    await expect(auth()(pre("ana@zetca.pro", "PreSignUp_SignUp"))).rejects.toThrow("already uses Mac Tidar Mail");
   });
   it("writes the invite with the domain's name, escaped, keeping Cognito's placeholders", async () => {
     table({ "DOMAIN#zetca.pro|META": DOMAIN });

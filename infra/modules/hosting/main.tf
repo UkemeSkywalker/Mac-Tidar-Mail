@@ -15,6 +15,8 @@ variable "cognito_region" { type = string }
 variable "mail_bucket" { type = string }
 variable "mail_bucket_region" { type = string }
 variable "ws_url" { type = string }
+variable "brand_url" { type = string }
+variable "brand_bucket_host" { type = string }
 
 locals {
   csp = join("; ", [
@@ -23,8 +25,9 @@ locals {
     "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
     "style-src 'self' 'unsafe-inline'",
     "font-src 'self'",
-    "img-src 'self' data: blob:",
-    "connect-src 'self' ${var.api_url} ${var.ws_url} https://cognito-idp.${var.cognito_region}.amazonaws.com https://${var.mail_bucket}.s3.${var.mail_bucket_region}.amazonaws.com",
+    # Company logos: published ones from CloudFront, a pending one previewed straight from the bucket.
+    "img-src 'self' data: blob: ${var.brand_url} https://${var.brand_bucket_host}",
+    "connect-src 'self' ${var.api_url} ${var.ws_url} https://cognito-idp.${var.cognito_region}.amazonaws.com https://${var.mail_bucket}.s3.${var.mail_bucket_region}.amazonaws.com https://${var.brand_bucket_host}",
     "worker-src 'self' blob:",
     "frame-src 'self' blob:",
     "object-src 'none'",

@@ -11,13 +11,15 @@ import {
 } from "../crypto";
 import { BrandMark } from "../../brand";
 import { Icon } from "../ui";
-import { ApiError, mailApi, type ServerMailbox } from "./api";
+import { ApiError, mailApi, type Brand, type ServerMailbox } from "./api";
 import { COUNTRIES } from "./countries";
 import { configureAuth, confirmResetPassword, confirmSignIn, confirmSignUp, getCurrentUser, keepSignedIn, resendSignUpCode, resetPassword, sessionRef, setKeepSignedIn, signIn, signOut, signUp } from "./auth";
 
 export interface LiveSession {
   address: string;
   displayName: string;
+  /** The company's name and logo, for an address on a verified customer domain. */
+  brand: Brand | null;
   session: MailboxSession;
   lockedKeys: number;
   lock: () => void;
@@ -185,7 +187,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
   const keyState = useRef<{ state: MailboxKeyState; version: number } | null>(null);
   const [session, setSession] = useState<MailboxSession | null>(null);
   /** Render-side copy of the open mailbox (refs above are for async flows only). */
-  const [opened, setOpened] = useState<{ address: string; displayName: string; lockedKeys: number } | null>(null);
+  const [opened, setOpened] = useState<{ address: string; displayName: string; lockedKeys: number; brand: Brand | null } | null>(null);
   const dev = useRef<DeviceKeyStore | null>(null);
 
 
@@ -193,7 +195,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
     const mb = mailbox.current!, current = keyState.current;
     const { keyVersion } = await mailApi.saveKeys(mb.address, state, current?.version ?? mb.keyVersion);
     keyState.current = { state, version: keyVersion };
-    setOpened({ address: mb.address, displayName: mb.displayName, lockedKeys: lockedKeyCount(state) });
+    setOpened({ address: mb.address, displayName: mb.displayName, lockedKeys: lockedKeyCount(state), brand: mb.brand ?? null });
   };
 
   /**
@@ -222,7 +224,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
 
   async function openMailbox(mb: ServerMailbox) {
     mailbox.current = mb;
-    setOpened({ address: mb.address, displayName: mb.displayName, lockedKeys: mb.keyState ? lockedKeyCount(mb.keyState) : 0 });
+    setOpened({ address: mb.address, displayName: mb.displayName, lockedKeys: mb.keyState ? lockedKeyCount(mb.keyState) : 0, brand: mb.brand ?? null });
     // Reopened after a reload: no password in memory.
     if (!password.current) {
       if (!mb.keyState) { await signOut().catch(() => {}); return setStage({ s: "signin", error: "Sign in again to finish setting up your mailbox." }); }
@@ -280,7 +282,15 @@ export function LiveGate({ children }: { children: ReactNode }) {
     if (!list.length) {
       // First sign-in after sign-up: open the account's own address.
       setStage({ s: "working", label: "Setting up your mailbox…" });
-      const mb = await mailApi.claim();
+      let mb: ServerMailbox;
+      try { mb = await mailApi.claim(); }
+      catch (e) {
+        // A Business sign-up whose domain isn't verified yet has no mailbox: its setup page is where it goes.
+        const { username } = await getCurrentUser();
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full load on purpose: nothing from this sign-in flow should carry over
+        if (e instanceof ApiError && e.status === 409 && !isMacTidarAddress(username)) { location.assign("/business/"); return; }
+        throw e;
+      }
       boxes.current = [mb];
       return openMailbox(mb);
     }
@@ -369,7 +379,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
 
   if (stage.s === "ready" && session && opened) {
     const live: LiveSession = {
-      address: opened.address, displayName: opened.displayName, session,
+      address: opened.address, displayName: opened.displayName, brand: opened.brand, session,
       lockedKeys: opened.lockedKeys, lock, signOut: () => doSignOut(), signOutEverywhere: () => doSignOut(true), openRecovery: () => setRecoveryOpen(true),
       ...(multiple ? { switchMailbox } : {}),
     };
@@ -383,7 +393,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
     case "working":
       return wrap(<div className="min-h-dvh grid place-items-center bg-m-canvas text-m-muted"><div className="flex items-center gap-3 t-body-md"><span className="w-4 h-4 rounded-full border-2 border-m-brand border-t-transparent animate-spin" />{stage.label}</div></div>);
     case "signin":
-      return wrap(<Shell title="Sign in" subtitle="Use your @mactidar.com address.">
+      return wrap(<Shell title="Sign in" subtitle="Use your @mactidar.com address, or your address on your company’s domain.">
         <form className="space-y-4" onSubmit={e => { const f = form(e); setKeepSignedIn(f.get("keep") === "on"); run(() => doSignIn(field(f, "password")), error => ({ s: "signin", error })); }}>
           <AddressField value={address} onChange={setAddress} autoComplete="username" />
           <PasswordField label="Password" name="password" autoComplete="current-password" required />

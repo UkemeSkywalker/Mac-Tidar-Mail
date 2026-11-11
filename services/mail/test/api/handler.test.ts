@@ -61,7 +61,7 @@ describe("authentication and ownership", () => {
   it("lists only the caller's mailboxes", async () => {
     ddb.on(QueryCommand).resolves({ Items: [meta, { ...meta, address: "x@y.com", ownerSub: OTHER }] });
     const r = await call("GET /v1/mailboxes");
-    expect(r.body.mailboxes).toEqual([{ address: ADDR, displayName: "Ukeme", keyState: null, keyVersion: 0 }]);
+    expect(r.body.mailboxes).toEqual([{ address: ADDR, displayName: "Ukeme", keyState: null, keyVersion: 0, brand: null }]);
     expect(ddb.commandCalls(QueryCommand)[0]!.args[0].input.ExpressionAttributeValues).toEqual({ ":o": `OWNER#${OWNER}` });
   });
 });

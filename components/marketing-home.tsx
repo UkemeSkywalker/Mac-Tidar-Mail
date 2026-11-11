@@ -50,7 +50,7 @@ const skins: Record<SkinKey, Skin> = {
 };
 
 
-const navLinks = [["#features", "Features"], ["#workspace", "Workspace"], ["#privacy", "Privacy"], ["#philosophy", "Values"], ["#faqs", "FAQs"]];
+const navLinks = [["#features", "Features"], ["#workspace", "Workspace"], ["#privacy", "Privacy"], ["/business/", "Business"], ["#faqs", "FAQs"]];
 
 const faqs: [string, ReactNode][] = [
   ["What is Mac Tidar Mail?", "Mac Tidar Mail is zero-access encrypted email with your own @mactidar.com address. Your mail is encrypted with a key only you hold, so it can only be read in your browser after you unlock it. Mac Tidar can't read it."],
