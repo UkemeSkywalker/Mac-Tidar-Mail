@@ -54,7 +54,7 @@ resource "aws_s3_bucket_cors_configuration" "brand" {
   bucket = aws_s3_bucket.brand.id
   cors_rule {
     allowed_methods = ["POST", "GET"]
-    allowed_origins = var.app_origins
+    allowed_origins = ["*"] # companies' own mail.<domain> upload logos too; uploads are pre-signed
     allowed_headers = ["*"]
     max_age_seconds = 3600
   }

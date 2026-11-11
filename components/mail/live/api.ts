@@ -43,17 +43,20 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 
 const mb = (address: string) => `/v1/mailboxes/${encodeURIComponent(address)}`;
 
-export type DomainCheck = "ownership" | "dkim" | "mx" | "spf" | "dmarc";
+export type DomainCheck = "ownership" | "dkim" | "mx" | "spf" | "dmarc" | "web";
 /** A connected domain (or one being set up) as its owner sees it (see services/mail/src/shared/domains.ts). */
 export interface DomainView {
   domain: string; displayName: string; status: "pending" | "active" | "suspended"; suspendedFor: "dns" | "abuse" | null;
   /** `dkimRecords`: the DKIM records are in DNS, though Amazon may not have confirmed them yet (`dkim`). */
-  checks: Record<DomainCheck, boolean> & { dkimRecords?: boolean };
+  checks: Record<Exclude<DomainCheck, "web">, boolean> & { dkimRecords?: boolean; web?: boolean };
   records: { purpose: string; type: string; name: string; host: string; value: string; priority?: number; check: DomainCheck }[];
   createdAt: string; checkedAt: string | null; verifiedAt: string | null; expiresAt: string | null;
   logoUrl: string | null;
   /** The owner's own sign-in address when it's on this domain (a Business account). */
   ownAddress: string | null;
+  /** mail.<domain>: Mac Tidar Mail on the company's own web address (null until the domain is verified). */
+  web: { host: string; enabled: boolean; /** Turned off by the owner (the record may still be there). */ off: boolean; status: "pending" | "active" | null; dns: boolean; certificate: string | null;
+    record: { purpose: string; type: string; name: string; host: string; value: string } } | null;
 }
 
 /** Someone with an address on a customer domain, as its owner sees them. */
@@ -90,6 +93,8 @@ export const mailApi = {
     return call<DomainView>("PUT", `/v1/domains/${encodeURIComponent(domain)}/logo`, { key: form.key });
   },
   removeLogo: (domain: string) => call<DomainView>("DELETE", `/v1/domains/${encodeURIComponent(domain)}/logo`),
+  enableWeb: (domain: string) => call<DomainView>("POST", `/v1/domains/${encodeURIComponent(domain)}/web`),
+  disableWeb: (domain: string) => call<DomainView>("DELETE", `/v1/domains/${encodeURIComponent(domain)}/web`),
   connectDomain: (domain: string, displayName: string) => call<DomainView>("POST", "/v1/domains", { domain, displayName }),
   checkDomain: (domain: string) => call<DomainView>("POST", `/v1/domains/${encodeURIComponent(domain)}/check`),
   removeDomain: (domain: string) => call<{ deleted: boolean }>("DELETE", `/v1/domains/${encodeURIComponent(domain)}`),

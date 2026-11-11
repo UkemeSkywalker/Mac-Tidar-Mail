@@ -25,6 +25,10 @@ variable "signup_domain" { type = string }
 variable "brand_bucket_name" { type = string }
 variable "brand_bucket_arn" { type = string }
 variable "brand_url" { type = string }
+variable "web_distribution_id" { type = string }
+variable "web_distribution_arn" { type = string }
+variable "web_connection_group" { type = string }
+variable "web_routing_endpoint" { type = string }
 
 locals {
   function_name = "mactidar-mail-api"
@@ -56,6 +60,8 @@ locals {
     "POST /v1/domains/{domain}/logo",
     "PUT /v1/domains/{domain}/logo",
     "DELETE /v1/domains/{domain}/logo",
+    "POST /v1/domains/{domain}/web",
+    "DELETE /v1/domains/{domain}/web",
     "GET /v1/domains/{domain}/people",
     "POST /v1/domains/{domain}/people",
     "POST /v1/domains/{domain}/people/{address}/invite",
@@ -162,6 +168,18 @@ data "aws_iam_policy_document" "api" {
     resources = ["${var.brand_bucket_arn}/uploads/*", "${var.brand_bucket_arn}/logos/*"]
   }
   statement {
+    # Companies' own web addresses: one CloudFront tenant each, with a CloudFront-managed certificate.
+    sid = "CompanyWebAddresses"
+    actions = ["cloudfront:CreateDistributionTenant", "cloudfront:GetDistributionTenant", "cloudfront:UpdateDistributionTenant",
+    "cloudfront:DeleteDistributionTenant", "cloudfront:GetManagedCertificateDetails", "cloudfront:ListDistributionTenants"]
+    resources = ["*"] # tenants are created at runtime; this role has no other CloudFront access
+  }
+  statement {
+    sid       = "CompanyWebAddressCertificates"
+    actions   = ["acm:RequestCertificate", "acm:DescribeCertificate", "acm:AddTagsToCertificate"]
+    resources = ["*"]
+  }
+  statement {
     sid       = "ListCiphertextVersions"
     actions   = ["s3:ListBucketVersions"]
     resources = [var.bucket_arn]
@@ -199,6 +217,9 @@ resource "aws_lambda_function" "api" {
       SIGNUP_DOMAIN                       = var.signup_domain
       BRAND_BUCKET                        = var.brand_bucket_name
       BRAND_URL                           = var.brand_url
+      WEB_DISTRIBUTION_ID                 = var.web_distribution_id
+      WEB_CONNECTION_GROUP_ID             = var.web_connection_group
+      WEB_ROUTING_ENDPOINT                = var.web_routing_endpoint
       MAIL_USER_POOL_ID                   = var.user_pool_id
       WS_ENDPOINT                         = var.ws_endpoint
       NODE_OPTIONS                        = "--enable-source-maps"
@@ -214,7 +235,9 @@ resource "aws_apigatewayv2_api" "mail" {
   protocol_type = "HTTP"
 
   cors_configuration {
-    allow_origins = var.app_origins
+    # Any origin: companies' own web addresses (mail.<domain>) call the API too. Requests carry a
+    # bearer token, never cookies, so allowing other origins exposes nothing.
+    allow_origins = ["*"]
     allow_methods = ["GET", "PUT", "PATCH", "POST", "DELETE"]
     allow_headers = ["authorization", "content-type"]
     max_age       = 3600

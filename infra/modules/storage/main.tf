@@ -79,7 +79,7 @@ resource "aws_s3_bucket_cors_configuration" "mail" {
   bucket = aws_s3_bucket.mail.id
   cors_rule {
     allowed_methods = ["GET", "PUT"]
-    allowed_origins = var.app_origins
+    allowed_origins = ["*"] # also companies' own mail.<domain>; every request is pre-signed
     allowed_headers = ["content-type", "content-length", "x-amz-*"]
     max_age_seconds = 3000
   }

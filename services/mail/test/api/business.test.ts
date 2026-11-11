@@ -9,6 +9,7 @@ import { mockClient } from "aws-sdk-client-mock";
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, PreSignUpTriggerEvent } from "aws-lambda";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createHandler, type UserAdmin } from "../../src/api/handler";
+import type { WebHosts } from "../../src/shared/webhost";
 import { createHandler as createAuth } from "../../src/auth/handler";
 import { sentEmail } from "../helpers";
 import { NO_CLAIM_CHECKS, type ClaimItem, type DomainItem, type PersonItem, type Resolver } from "../../src/shared/domains";
@@ -28,7 +29,7 @@ const accounts: Record<string, { sub: string; email: string }> = {
 };
 
 /** A DNS zone in memory; anything not listed doesn't exist. */
-let zone: { mx?: Record<string, { exchange: string; priority: number }[]>; txt?: Record<string, string[][]> };
+let zone: { mx?: Record<string, { exchange: string; priority: number }[]>; txt?: Record<string, string[][]>; cname?: Record<string, string[]> };
 const dns: Resolver = {
   resolveMx: async n => { const r = zone.mx?.[n]; if (!r) throw Object.assign(new Error("nf"), { code: "ENOTFOUND" }); return r; },
   resolveTxt: async n => { const r = zone.txt?.[n]; if (!r) throw Object.assign(new Error("nf"), { code: "ENOTFOUND" }); return r; },
@@ -261,5 +262,86 @@ describe("invite email", () => {
     expect(out.response.emailMessage).toContain("Zetca &amp; Co");
     table({ "DOMAIN#zetca.pro|META": { ...d, logoKey: "logos/zetca.pro/x.svg\" onerror=\"alert(1)" } });
     expect(((await auth("https://cdn.example")(ev())) as { response: { emailMessage: string } }).response.emailMessage).not.toContain("onerror");
+  });
+});
+
+describe("company web address (mail.<domain>)", () => {
+  const d: DomainItem = { pk: "DOMAIN#zetca.pro", sk: "META", type: "domain", domain: "zetca.pro", ownerSub: "sub-ceo", ownerAddress: "ceo@zetca.pro", displayName: "Zetca", status: "active",
+    dkimTokens: TOKENS, checks: { dkim: true, mx: true, spf: true, dmarc: true }, createdAt: "x", gsi1pk: "DOMAINS#sub-ceo", gsi1sk: "zetca.pro", gsi2pk: "DOMAINS", gsi2sk: "zetca.pro" };
+  let created: string[], disabled: string[], status = { active: false, certificate: "pending-validation" as string | null, attached: false };
+  const webHosts: WebHosts = {
+    routingEndpoint: "d111.cloudfront.net",
+    create: async host => { created.push(host); return { tenantId: "dt-1" }; },
+    status: async () => status,
+    disable: async id => { disabled.push(id); },
+    remove: async () => true,
+  };
+  const webApi = () => createHandler({
+    ddb: DynamoDBDocumentClient.from(new DynamoDBClient({})), s3: new S3Client({}), ses: new SESv2Client({}), users, webHosts,
+    dns: { ...dns, resolveCname: async (n: string) => { if (n === "mail.zetca.pro" && zone.cname?.[n]) return zone.cname[n]!; throw Object.assign(new Error("nf"), { code: "ENOTFOUND" }); } },
+    account: async u => accounts[u] ? { ...accounts[u]!, emailVerified: true, givenName: "Chi", familyName: "Eze" } : null,
+    config: { table: "t", bucket: "b", configurationSet: "c", localDomains: ["mactidar.com"], region: "af-south-1", signupDomain: "mactidar.com" },
+  });
+  const webCall = async (routeKey: string) => {
+    const r = await webApi()({ routeKey, pathParameters: { domain: "zetca.pro" }, isBase64Encoded: false,
+      requestContext: { authorizer: { jwt: { claims: { sub: "sub-ceo", username: "ceo@zetca.pro" }, scopes: [] } } } } as unknown as APIGatewayProxyEventV2WithJWTAuthorizer);
+    return { status: r.statusCode!, body: JSON.parse(r.body as string) };
+  };
+  beforeEach(() => { created = []; disabled = []; status = { active: false, certificate: "pending-validation", attached: false }; });
+
+  it("lists the optional mail CNAME with the other records, and sets it up only once verified and in place", async () => {
+    table({ "DOMAIN#zetca.pro|META": d }); ddb.on(UpdateCommand).resolves({}); ddb.on(PutCommand).resolves({});
+    ses.on(GetEmailIdentityCommand).resolves({ DkimAttributes: { Status: "SUCCESS" } });
+    zone = verifiedZone("t");
+    // Verified, but no mail CNAME yet: nothing is created, and the record is in the list as optional.
+    let r = await webCall("POST /v1/domains/{domain}/check");
+    expect(created).toEqual([]);
+    expect(r.body.records.at(-1)).toMatchObject({ purpose: "Web address", type: "CNAME", host: "mail", value: "d111.cloudfront.net", check: "web" });
+    expect(r.body.web).toMatchObject({ enabled: false });
+    expect((await webCall("POST /v1/domains/{domain}/web")).body.error).toMatch(/Add the CNAME record for mail\.zetca\.pro first/);
+    // The CNAME appears: the next check sets the web address up by itself (CloudFront needs it in place first).
+    zone = { ...verifiedZone("t"), cname: { "mail.zetca.pro": ["d111.cloudfront.net."] } } as typeof zone;
+    r = await webCall("POST /v1/domains/{domain}/check");
+    expect(created).toEqual(["mail.zetca.pro"]);
+    expect(r.body.web).toMatchObject({ host: "mail.zetca.pro", enabled: true, status: "pending" });
+  });
+
+  it("never sets up a pending domain's web address, even with the CNAME in place", async () => {
+    table({ "DOMAIN#zetca.pro|META": { ...d, status: "pending" } });
+    expect((await webCall("POST /v1/domains/{domain}/web")).status).toBe(409);
+    expect(created).toEqual([]);
+  });
+
+  it("stays off after the owner turns it off, until the CNAME is removed", async () => {
+    table({ "DOMAIN#zetca.pro|META": { ...d, webOff: true } }); ddb.on(UpdateCommand).resolves({}); ddb.on(PutCommand).resolves({});
+    ses.on(GetEmailIdentityCommand).resolves({ DkimAttributes: { Status: "SUCCESS" } });
+    zone = { ...verifiedZone("t"), cname: { "mail.zetca.pro": ["d111.cloudfront.net."] } } as typeof zone;
+    await webCall("POST /v1/domains/{domain}/check");
+    expect(created).toEqual([]);
+    zone = verifiedZone("t");
+    await webCall("POST /v1/domains/{domain}/check");
+    expect(ddb.commandCalls(UpdateCommand).some(c => c.args[0].input.UpdateExpression === "REMOVE webOff")).toBe(true);
+  });
+
+  it("goes live once the CNAME points at us and the certificate is issued, and tells the owner", async () => {
+    const webHost = { host: "mail.zetca.pro", tenantId: "dt-1", status: "pending" as const, dns: false, certificate: null, createdAt: "x" };
+    table({ "DOMAIN#zetca.pro|META": { ...d, webHost } }); ddb.on(UpdateCommand).resolves({}); ddb.on(PutCommand).resolves({});
+    ses.on(GetEmailIdentityCommand).resolves({ DkimAttributes: { Status: "SUCCESS" } });
+    zone = { ...verifiedZone("t"), cname: { "mail.zetca.pro": ["d111.cloudfront.net."] } } as typeof zone;
+    status = { active: true, certificate: "issued", attached: true };
+    const r = await webCall("POST /v1/domains/{domain}/check");
+    expect(r.body.web).toMatchObject({ dns: true, certificate: "issued", status: "active" });
+    const mails = await Promise.all(ses.commandCalls(SendEmailCommand).map(c => sentEmail(c.args[0].input)));
+    expect(mails.map(m => m.subject)).toContain("mail.zetca.pro is ready");
+  });
+
+  it("turning it off disables the CloudFront tenant and queues its deletion", async () => {
+    const webHost = { host: "mail.zetca.pro", tenantId: "dt-1", status: "active" as const, dns: true, certificate: "issued", createdAt: "x" };
+    table({ "DOMAIN#zetca.pro|META": { ...d, webHost } }); ddb.on(UpdateCommand).resolves({}); ddb.on(PutCommand).resolves({});
+    const r = await webCall("DELETE /v1/domains/{domain}/web");
+    expect(r.body.web).toMatchObject({ enabled: false });
+    expect(disabled).toEqual(["dt-1"]);
+    expect(ddb.commandCalls(PutCommand)[0]!.args[0].input.Item).toMatchObject({ pk: "TENANTPURGE#dt-1", gsi2pk: "TENANTPURGES" });
+    expect(ddb.commandCalls(UpdateCommand).at(-1)!.args[0].input.UpdateExpression).toBe("REMOVE webHost SET webOff = :t");
   });
 });

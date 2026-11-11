@@ -25,6 +25,7 @@ const PURPOSE: Record<string, string> = {
   MX: "Delivers mail for the domain to Mac Tidar Mail",
   SPF: "Lets receivers trust mail sent for you",
   DMARC: "Tells receivers what to do with forged mail",
+  "Web address": "Lets your team open their mail at mail.<your domain>, with your logo",
 };
 /** Records the domain needs to work; SPF and DMARC are strongly recommended but optional. */
 const REQUIRED: DomainCheck[] = ["ownership", "dkim", "mx"];
@@ -125,12 +126,12 @@ export function DomainSetup({ d, onChange, onRemoved }: { d: DomainView; onChang
             <table className="w-full t-body-sm">
               <thead><tr className="text-left text-m-muted"><th className="py-1 pr-2 font-medium">Type</th><th className="py-1 pr-2 font-medium">Name</th><th className="py-1 pr-2 font-medium">Value</th><th className="py-1 font-medium"><span className="sr-only">Status</span></th></tr></thead>
               <tbody>{d.records.map(r => {
-                const ok = d.checks[r.check], optional = !REQUIRED.includes(r.check);
+                const ok = !!d.checks[r.check], optional = !REQUIRED.includes(r.check);
                 // DKIM: found in DNS, waiting for Amazon SES to confirm it.
                 const waiting = !ok && r.check === "dkim" && !!d.checks.dkimRecords;
                 return (
                   <tr key={r.name + r.value} className="border-t border-m-line align-top">
-                    <td className="py-2 pr-2"><span className="t-code text-m-muted whitespace-nowrap">{r.type}</span><span className="block t-label-sm text-m-muted mt-0.5" title={PURPOSE[r.purpose]}>{r.purpose}{optional ? " (recommended)" : ""}</span></td>
+                    <td className="py-2 pr-2"><span className="t-code text-m-muted whitespace-nowrap">{r.type}</span><span className="block t-label-sm text-m-muted mt-0.5" title={PURPOSE[r.purpose]}>{r.purpose}{r.check === "web" ? " (optional)" : optional ? " (recommended)" : ""}</span></td>
                     <td className="py-2 pr-2 min-w-[7rem]"><CopyText text={r.host} /></td>
                     <td className="py-2 pr-2 min-w-[12rem]">{r.priority !== undefined && <span className="t-code text-m-muted">priority {r.priority} · </span>}<CopyText text={r.value} /></td>
                     <td className="py-2" title={waiting ? "Found. Waiting for Amazon to confirm it (usually within an hour)." : undefined}>
@@ -166,6 +167,8 @@ export function DomainSetup({ d, onChange, onRemoved }: { d: DomainView; onChang
         )}
       </Section>
 
+      {d.web && !d.web.off && (d.web.enabled || d.checks.web) && <WebAddress d={d} onChange={onChange} />}
+
       <Section title="Team" icon="group">
         {d.status === "pending"
           ? <p className="t-body-sm text-m-muted flex items-center gap-2"><Icon name="lock" className="text-[16px]" />Unlocks once {d.domain} is verified. Then you can create addresses for your team.</p>
@@ -178,6 +181,34 @@ export function DomainSetup({ d, onChange, onRemoved }: { d: DomainView; onChang
           : !d.ownAddress && <Btn tone="danger" disabled={!!busy} onClick={() => { if (confirm(`Disconnect ${d.domain} from Mac Tidar Mail?`)) void act("remove", async () => { await mailApi.removeDomain(d.domain); onRemoved(); }); }}>Disconnect domain</Btn>}
       </div>
     </article>
+  );
+}
+
+// mail.<domain>: Mac Tidar Mail on the company's own web address. One CNAME; CloudFront issues
+// and renews the HTTPS certificate itself once it points at us.
+function WebAddress({ d, onChange }: { d: DomainView; onChange: (d: DomainView) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const w = d.web!;
+  const act = async (fn: () => Promise<void>) => { if (busy) return; setBusy(true); setError(""); try { await fn(); } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); } };
+  const steps: [boolean, string][] = [
+    [!!d.checks.web, "Web address record found"],
+    [w.enabled, "Set up on Mac Tidar Mail"],
+    [w.certificate === "issued", "Secure (HTTPS) certificate issued, usually within 30 minutes"],
+    [w.status === "active", `${w.host} is live`],
+  ];
+  return (
+    <Section title="Web address" icon="language" aside={w.status === "active" ? <span className="px-2.5 py-1 rounded-m-pill t-label-sm font-semibold bg-m-success/15 text-m-success">Live</span> : undefined}>
+      {w.status === "active"
+        ? <p className="t-body-sm text-m-text">Your team can sign in at <b>{w.host}</b>, with your logo from the first screen.</p>
+        : <p className="t-body-sm text-m-muted">Your team will be able to open their mail at <b className="text-m-text">{w.host}</b>. We’ll email you when it’s ready.</p>}
+      <ul className="space-y-1">{steps.map(([ok, text]) => <li key={text} className="flex items-center gap-2 t-body-sm text-m-text"><Icon name={ok ? "check_circle" : "radio_button_unchecked"} className={`text-[16px] ${ok ? "text-m-success" : "text-m-muted"}`} />{text}</li>)}</ul>
+      <div className="flex flex-wrap gap-2">
+        {w.status === "active" && <a href={`https://${w.host}/app/`} className="px-3 py-2 rounded-m-lg t-headline-sm bg-m-low text-m-text hover:bg-m-mid">Open {w.host}</a>}
+        {w.enabled && <Btn tone="danger" disabled={busy} onClick={() => { if (confirm(`Turn off ${w.host}? Your team can still sign in at mail.mactidar.com. You can also remove its DNS record.`)) void act(async () => onChange(await mailApi.disableWeb(d.domain))); }}>Turn off</Btn>}
+      </div>
+      {error && <p className="t-body-sm text-m-error" role="alert">{error}</p>}
+    </Section>
   );
 }
 
