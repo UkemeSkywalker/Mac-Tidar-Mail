@@ -11,13 +11,15 @@ import {
 } from "../crypto";
 import { BrandMark } from "../../brand";
 import { Icon } from "../ui";
-import { ApiError, mailApi, type ServerMailbox } from "./api";
+import { ApiError, mailApi, publicBrand, type Brand, type ServerMailbox } from "./api";
 import { COUNTRIES } from "./countries";
 import { configureAuth, confirmResetPassword, confirmSignIn, confirmSignUp, getCurrentUser, keepSignedIn, resendSignUpCode, resetPassword, sessionRef, setKeepSignedIn, signIn, signOut, signUp } from "./auth";
 
 export interface LiveSession {
   address: string;
   displayName: string;
+  /** The company's name and logo, for an address on a verified customer domain. */
+  brand: Brand | null;
   session: MailboxSession;
   lockedKeys: number;
   lock: () => void;
@@ -106,13 +108,19 @@ function toE164(dial: string, phone: string): string {
   return `+${dial}${digits.replace(/^0+/, "")}`;
 }
 
-function Shell({ children, title, subtitle }: { children: ReactNode; title: string; subtitle?: string }) {
+function Shell({ children, title, subtitle, brand }: { children: ReactNode; title: string; subtitle?: string; brand?: Brand | null }) {
   return (
     <div className="min-h-dvh grid place-items-center bg-m-canvas p-4">
       <div className="w-full max-w-md bg-m-card rounded-m-xl shadow-xl border border-m-line p-space-xl">
         <div className="flex items-center gap-3 mb-6">
-          <BrandMark className="h-10" />
-          <div><b className="t-headline-sm text-m-text block">Mac Tidar Mail</b><span className="t-label-sm text-m-muted">Zero-access encrypted</span></div>
+          {brand ? <>
+            {/* eslint-disable-next-line @next/next/no-img-element -- static export serves images unoptimized */}
+            {brand.logoUrl ? <img src={brand.logoUrl} alt="" className="h-10 w-10 rounded-m-lg object-contain bg-white border border-m-line" /> : <BrandMark className="h-10" />}
+            <div className="min-w-0"><b className="t-headline-sm text-m-text block truncate">{brand.name}</b><span className="t-label-sm text-m-muted">on Mac Tidar Mail · zero-access encrypted</span></div>
+          </> : <>
+            <BrandMark className="h-10" />
+            <div><b className="t-headline-sm text-m-text block">Mac Tidar Mail</b><span className="t-label-sm text-m-muted">Zero-access encrypted</span></div>
+          </>}
         </div>
         <h1 className="t-headline-lg text-m-text">{title}</h1>
         {subtitle && <p className="t-body-md text-m-muted mt-1">{subtitle}</p>}
@@ -174,6 +182,17 @@ export function LiveGate({ children }: { children: ReactNode }) {
   const [stage, setStage] = useState<Stage>({ s: "working", label: "Starting…" });
   /** The address typed on the sign-in and reset forms. */
   const [address, setAddress] = useState("");
+  /** The company behind the address being typed, when it's on a verified customer domain. */
+  const typedDomain = address.trim().toLowerCase().split("@")[1] ?? "";
+  const brandable = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(typedDomain) && !/(^|\.)mactidar\.com$/.test(typedDomain) && !BACKUP_PROVIDERS.test(`@${typedDomain}`);
+  const [fetchedBrand, setFetchedBrand] = useState<{ domain: string; brand: Brand | null } | null>(null);
+  useEffect(() => {
+    if (!brandable) return;
+    let live = true;
+    const t = setTimeout(() => { publicBrand(typedDomain).then(brand => { if (live) setFetchedBrand({ domain: typedDomain, brand }); }); }, 350);
+    return () => { live = false; clearTimeout(t); };
+  }, [brandable, typedDomain]);
+  const signinBrand = brandable && fetchedBrand?.domain === typedDomain ? fetchedBrand.brand : null;
   const [draft, setDraft] = useState<SignupDraft>(EMPTY_DRAFT);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const password = useRef<string>("");
@@ -185,7 +204,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
   const keyState = useRef<{ state: MailboxKeyState; version: number } | null>(null);
   const [session, setSession] = useState<MailboxSession | null>(null);
   /** Render-side copy of the open mailbox (refs above are for async flows only). */
-  const [opened, setOpened] = useState<{ address: string; displayName: string; lockedKeys: number } | null>(null);
+  const [opened, setOpened] = useState<{ address: string; displayName: string; lockedKeys: number; brand: Brand | null } | null>(null);
   const dev = useRef<DeviceKeyStore | null>(null);
 
 
@@ -193,7 +212,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
     const mb = mailbox.current!, current = keyState.current;
     const { keyVersion } = await mailApi.saveKeys(mb.address, state, current?.version ?? mb.keyVersion);
     keyState.current = { state, version: keyVersion };
-    setOpened({ address: mb.address, displayName: mb.displayName, lockedKeys: lockedKeyCount(state) });
+    setOpened({ address: mb.address, displayName: mb.displayName, lockedKeys: lockedKeyCount(state), brand: mb.brand ?? null });
   };
 
   /**
@@ -222,7 +241,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
 
   async function openMailbox(mb: ServerMailbox) {
     mailbox.current = mb;
-    setOpened({ address: mb.address, displayName: mb.displayName, lockedKeys: mb.keyState ? lockedKeyCount(mb.keyState) : 0 });
+    setOpened({ address: mb.address, displayName: mb.displayName, lockedKeys: mb.keyState ? lockedKeyCount(mb.keyState) : 0, brand: mb.brand ?? null });
     // Reopened after a reload: no password in memory.
     if (!password.current) {
       if (!mb.keyState) { await signOut().catch(() => {}); return setStage({ s: "signin", error: "Sign in again to finish setting up your mailbox." }); }
@@ -280,7 +299,15 @@ export function LiveGate({ children }: { children: ReactNode }) {
     if (!list.length) {
       // First sign-in after sign-up: open the account's own address.
       setStage({ s: "working", label: "Setting up your mailbox…" });
-      const mb = await mailApi.claim();
+      let mb: ServerMailbox;
+      try { mb = await mailApi.claim(); }
+      catch (e) {
+        // A Business sign-up whose domain isn't verified yet has no mailbox: its setup page is where it goes.
+        const { username } = await getCurrentUser();
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full load on purpose: nothing from this sign-in flow should carry over
+        if (e instanceof ApiError && e.status === 409 && !isMacTidarAddress(username)) { location.assign("/business/"); return; }
+        throw e;
+      }
       boxes.current = [mb];
       return openMailbox(mb);
     }
@@ -369,7 +396,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
 
   if (stage.s === "ready" && session && opened) {
     const live: LiveSession = {
-      address: opened.address, displayName: opened.displayName, session,
+      address: opened.address, displayName: opened.displayName, brand: opened.brand, session,
       lockedKeys: opened.lockedKeys, lock, signOut: () => doSignOut(), signOutEverywhere: () => doSignOut(true), openRecovery: () => setRecoveryOpen(true),
       ...(multiple ? { switchMailbox } : {}),
     };
@@ -383,7 +410,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
     case "working":
       return wrap(<div className="min-h-dvh grid place-items-center bg-m-canvas text-m-muted"><div className="flex items-center gap-3 t-body-md"><span className="w-4 h-4 rounded-full border-2 border-m-brand border-t-transparent animate-spin" />{stage.label}</div></div>);
     case "signin":
-      return wrap(<Shell title="Sign in" subtitle="Use your @mactidar.com address.">
+      return wrap(<Shell brand={signinBrand} title="Sign in" subtitle={signinBrand ? `Use your @${address.trim().toLowerCase().split("@")[1]} address.` : "Use your @mactidar.com address, or your address on your company’s domain."}>
         <form className="space-y-4" onSubmit={e => { const f = form(e); setKeepSignedIn(f.get("keep") === "on"); run(() => doSignIn(field(f, "password")), error => ({ s: "signin", error })); }}>
           <AddressField value={address} onChange={setAddress} autoComplete="username" />
           <PasswordField label="Password" name="password" autoComplete="current-password" required />
@@ -485,21 +512,21 @@ export function LiveGate({ children }: { children: ReactNode }) {
         </div>
       </Shell>);
     case "totp":
-      return wrap(<Shell title="Two-step verification" subtitle="Enter the 6-digit code from your authenticator app.">
+      return wrap(<Shell brand={signinBrand} title="Two-step verification" subtitle="Enter the 6-digit code from your authenticator app.">
         <form className="space-y-4" onSubmit={e => { const f = form(e); run(async () => { const r = await confirmSignIn({ challengeResponse: field(f, "code").trim() }); if (r.nextStep.signInStep !== "DONE") throw new Error("Verification incomplete"); await afterSignIn(); }, error => ({ s: "totp", error })); }}>
           <Field label="Code" name="code" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" required />
           <ErrorLine text={stage.error} /><Primary type="submit">Verify</Primary>
         </form>
       </Shell>);
     case "newPassword":
-      return wrap(<Shell title="Choose a new password" subtitle="Your account needs a new password before first use.">
+      return wrap(<Shell brand={signinBrand} title="Choose a new password" subtitle="Your account needs a new password before first use.">
         <form className="space-y-4" onSubmit={e => { const f = form(e); run(async () => { const pw = field(f, "password"); password.current = pw; const r = await confirmSignIn({ challengeResponse: pw }); if (r.nextStep.signInStep !== "DONE") throw new Error("Sign-in incomplete"); await afterSignIn(); }, error => ({ s: "newPassword", error })); }}>
           <PasswordField label="New password" name="password" autoComplete="new-password" minLength={8} required hint={PASSWORD_RULES} />
           <ErrorLine text={stage.error} /><Primary type="submit">Continue</Primary>
         </form>
       </Shell>);
     case "forgot":
-      return wrap(<Shell title="Reset your password" subtitle="Enter your @mactidar.com address. We’ll send a code to its backup email.">
+      return wrap(<Shell brand={signinBrand} title="Reset your password" subtitle="Enter your Mac Tidar Mail address. We’ll send a code to its backup email.">
         <form className="space-y-4" onSubmit={e => { form(e); run(async () => {
           await resetPassword({ username: toUsername(address) });
           setStage({ s: "forgotCode" });
@@ -510,7 +537,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
         <Link onClick={() => setStage({ s: "signin" })}>Back to sign in</Link>
       </Shell>);
     case "forgotCode":
-      return wrap(<Shell title="Enter the code" subtitle="Check your backup email for a 6-digit code, then choose a new password. Your mail is never lost: new mail works straight away, and older mail can be recovered.">
+      return wrap(<Shell brand={signinBrand} title="Enter the code" subtitle="Check your backup email for a 6-digit code, then choose a new password. Your mail is never lost: new mail works straight away, and older mail can be recovered.">
         <form className="space-y-4" onSubmit={e => { const f = form(e); run(async () => {
           const pw = field(f, "password");
           if (!strongEnough(pw)) throw new Error(PASSWORD_RULES);

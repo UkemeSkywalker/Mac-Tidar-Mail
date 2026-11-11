@@ -22,6 +22,9 @@ variable "ses_identity_arn" { type = string }
 variable "ses_configuration_set" { type = string }
 variable "ses_events_topic_arn" { type = string }
 variable "signup_domain" { type = string }
+variable "brand_bucket_name" { type = string }
+variable "brand_bucket_arn" { type = string }
+variable "brand_url" { type = string }
 
 locals {
   function_name = "mactidar-mail-api"
@@ -48,7 +51,11 @@ locals {
     "POST /v1/domains",
     "GET /v1/domains/{domain}",
     "POST /v1/domains/{domain}/check",
+    "PATCH /v1/domains/{domain}",
     "DELETE /v1/domains/{domain}",
+    "POST /v1/domains/{domain}/logo",
+    "PUT /v1/domains/{domain}/logo",
+    "DELETE /v1/domains/{domain}/logo",
     "GET /v1/domains/{domain}/people",
     "POST /v1/domains/{domain}/people",
     "POST /v1/domains/{domain}/people/{address}/invite",
@@ -149,6 +156,12 @@ data "aws_iam_policy_document" "api" {
     resources = ["${var.bucket_arn}/msg/*", "${var.bucket_arn}/att/*"]
   }
   statement {
+    # Logo uploads (the presigned POST is signed with this role) and publishing verified domains' logos.
+    sid       = "CompanyLogos"
+    actions   = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
+    resources = ["${var.brand_bucket_arn}/uploads/*", "${var.brand_bucket_arn}/logos/*"]
+  }
+  statement {
     sid       = "ListCiphertextVersions"
     actions   = ["s3:ListBucketVersions"]
     resources = [var.bucket_arn]
@@ -184,6 +197,8 @@ resource "aws_lambda_function" "api" {
       SES_CONFIGURATION_SET               = var.ses_configuration_set
       LOCAL_MAIL_DOMAINS                  = join(",", var.local_domains)
       SIGNUP_DOMAIN                       = var.signup_domain
+      BRAND_BUCKET                        = var.brand_bucket_name
+      BRAND_URL                           = var.brand_url
       MAIL_USER_POOL_ID                   = var.user_pool_id
       WS_ENDPOINT                         = var.ws_endpoint
       NODE_OPTIONS                        = "--enable-source-maps"
@@ -234,6 +249,14 @@ resource "aws_apigatewayv2_route" "routes" {
   authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
 }
 
+# Public: a verified company domain's name and logo for the sign-in screen. No sign-in needed.
+resource "aws_apigatewayv2_route" "public_brand" {
+  api_id             = aws_apigatewayv2_api.mail.id
+  route_key          = "GET /v1/brand"
+  target             = "integrations/${aws_apigatewayv2_integration.api.id}"
+  authorization_type = "NONE"
+}
+
 resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.mail.id
   name        = "$default"
@@ -242,6 +265,13 @@ resource "aws_apigatewayv2_stage" "default" {
   default_route_settings {
     throttling_burst_limit = 40
     throttling_rate_limit  = 20
+  }
+
+  # Looked up as people type on the sign-in screen; nobody needs more than this.
+  route_settings {
+    route_key              = "GET /v1/brand"
+    throttling_burst_limit = 10
+    throttling_rate_limit  = 5
   }
 
   # Opening a new mailbox gets a much lower limit than the rest of the API.
@@ -259,7 +289,7 @@ resource "aws_apigatewayv2_stage" "default" {
     })
   }
   # Route-level throttles need the routes to exist first.
-  depends_on = [aws_apigatewayv2_route.routes]
+  depends_on = [aws_apigatewayv2_route.routes, aws_apigatewayv2_route.public_brand]
 }
 
 resource "aws_lambda_permission" "apigw" {
@@ -306,6 +336,27 @@ resource "aws_lambda_permission" "domains" {
   function_name = aws_lambda_function.api.function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.domains.arn
+}
+
+# Every 15 minutes: check domains people are setting up, remind them, release unverified ones.
+resource "aws_cloudwatch_event_rule" "claims" {
+  name                = "${local.function_name}-check-claims"
+  description         = "Check customer domains being set up; verify, remind or release them."
+  schedule_expression = "rate(15 minutes)"
+}
+
+resource "aws_cloudwatch_event_target" "claims" {
+  rule  = aws_cloudwatch_event_rule.claims.name
+  arn   = aws_lambda_function.api.arn
+  input = jsonencode({ task = "check-claims" })
+}
+
+resource "aws_lambda_permission" "claims" {
+  statement_id  = "AllowClaimCheck"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.api.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.claims.arn
 }
 
 # ── Delivery events: SES → SNS → this Lambda → Sent copy's delivery status ──────────────────

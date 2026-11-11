@@ -18,6 +18,12 @@ module "storage" {
   app_origins           = var.app_origins
 }
 
+module "brand" {
+  source      = "./modules/brand"
+  bucket_name = "mactidar-mail-brand-${local.account_id}"
+  app_origins = var.app_origins
+}
+
 module "table" {
   source      = "./modules/table"
   table_name  = "mactidar-mail"
@@ -44,6 +50,7 @@ module "users" {
   data_key_arn      = module.kms.data_key_arn
   alerts_topic_arn  = module.monitoring.alerts_topic_arn
   lambda_source_dir = "${path.root}/../services/mail/dist/auth"
+  brand_url         = module.brand.url
 }
 
 module "monitoring" {
@@ -96,6 +103,9 @@ module "api" {
   signup_domain         = var.root_domain
   ws_endpoint           = module.push.management_endpoint
   ws_manage_arn         = module.push.manage_connections_arn
+  brand_bucket_name     = module.brand.bucket_name
+  brand_bucket_arn      = module.brand.bucket_arn
+  brand_url             = module.brand.url
 }
 
 module "hosting" {
@@ -107,6 +117,8 @@ module "hosting" {
   mail_bucket        = module.storage.bucket_name
   mail_bucket_region = var.region
   ws_url             = module.push.ws_url
+  brand_url          = module.brand.url
+  brand_bucket_host  = module.brand.bucket_regional_domain
 }
 
 module "push" {

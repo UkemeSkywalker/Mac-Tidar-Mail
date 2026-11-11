@@ -1,5 +1,5 @@
-import { ConditionalCheckFailedException, DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { BatchWriteCommand, DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { BatchWriteCommand, DeleteCommand, DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import { DeleteObjectsCommand, ListObjectVersionsCommand, S3Client } from "@aws-sdk/client-s3";
 import { CreateEmailIdentityCommand, DeleteEmailIdentityCommand, GetEmailIdentityCommand, SendEmailCommand, SESv2Client } from "@aws-sdk/client-sesv2";
 import { mockClient } from "aws-sdk-client-mock";
@@ -92,30 +92,41 @@ const stored = (over: Partial<DomainItem> = {}): DomainItem => ({ pk: "DOMAIN#ze
   status: "pending", dkimTokens: TOKENS, checks: NO_CHECKS, createdAt: new Date().toISOString(), gsi1pk: "DOMAINS#sub-a", gsi1sk: "zetca.pro", gsi2pk: "DOMAINS", gsi2sk: "zetca.pro", ...over });
 
 describe("connecting a domain", () => {
-  it("claims the name, creates its SES identity and returns the records", async () => {
-    ddb.on(QueryCommand).resolves({ Count: 0 });
-    ddb.on(PutCommand).resolves({}); ddb.on(UpdateCommand).resolves({});
-    ses.on(CreateEmailIdentityCommand).resolves({ DkimAttributes: { Tokens: TOKENS } });
+  it("starts a claim with its own ownership record, creates the SES identity and emails the records", async () => {
+    ddb.on(QueryCommand).resolves({ Count: 0, Items: [] }); ddb.on(GetCommand).resolves({});
+    ddb.on(PutCommand).resolves({});
+    ses.on(CreateEmailIdentityCommand).resolves({ DkimAttributes: { Tokens: TOKENS } }); ses.on(SendEmailCommand).resolves({});
     const r = await call("POST /v1/domains", { body: { domain: "Zetca.pro", displayName: "Zetca" } });
     expect(r.status).toBe(201);
     expect(r.body).toMatchObject({ domain: "zetca.pro", displayName: "Zetca", status: "pending", records: expect.arrayContaining([expect.objectContaining({ type: "MX", value: MX })]) });
-    expect(r.body.ownerSub).toBeUndefined();
-    expect(ddb.commandCalls(PutCommand)[0]!.args[0].input).toMatchObject({ ConditionExpression: "attribute_not_exists(pk)", Item: { ownerSub: "sub-a", ownerAddress: "ada@mactidar.com", gsi1pk: "DOMAINS#sub-a" } });
+    expect(r.body.records[0]).toMatchObject({ purpose: "Ownership", type: "TXT", host: "_mactidar", value: expect.stringMatching(/^mactidar-verify=[0-9a-f]{32}$/) });
+    expect(r.body.ownerSub).toBeUndefined(); expect(r.body.token).toBeUndefined();
+    expect(ddb.commandCalls(PutCommand)[0]!.args[0].input).toMatchObject({ ConditionExpression: "attribute_not_exists(pk)", Item: { type: "claim", sk: "CLAIM#sub-a", ownerSub: "sub-a", ownerAddress: "ada@mactidar.com", gsi1pk: "DOMAINS#sub-a", gsi2pk: "CLAIMS" } });
     expect(ses.commandCalls(CreateEmailIdentityCommand)[0]!.args[0].input).toMatchObject({ EmailIdentity: "zetca.pro", ConfigurationSetName: "mactidar-mail" });
+    const mail = ses.commandCalls(SendEmailCommand)[0]!.args[0].input;
+    expect(mail.Destination?.ToAddresses).toEqual(["ada.backup@gmail.com"]);
+    expect(mail.Content?.Simple?.Body?.Text?.Data).toContain("_mactidar");
+    expect(mail.Content?.Simple?.Body?.Text?.Data).not.toMatch(/https?:\/\//);
   });
-  it("enforces the limit and refuses a name someone else has", async () => {
+  it("lets a second person claim a pending domain, reusing the SES identity", async () => {
+    ddb.on(QueryCommand).callsFake(i => i.IndexName ? { Count: 0 } : { Items: [{ type: "claim", ownerSub: "sub-b" }] });
+    ddb.on(GetCommand).resolves({}); ddb.on(PutCommand).resolves({});
+    ses.on(CreateEmailIdentityCommand).rejects(Object.assign(new Error("exists"), { name: "AlreadyExistsException" }));
+    ses.on(GetEmailIdentityCommand).resolves({ DkimAttributes: { Tokens: TOKENS, Status: "PENDING" } }); ses.on(SendEmailCommand).resolves({});
+    const r = await call("POST /v1/domains", { body: { domain: "zetca.pro" } });
+    expect(r.status).toBe(201);
+    expect(r.body.records.filter((x: { type: string }) => x.type === "CNAME").map((x: { value: string }) => x.value)).toEqual(TOKENS.map(t => `${t}.dkim.amazonses.com`));
+  });
+  it("enforces the limit and refuses a verified domain or a second claim of your own", async () => {
     ddb.on(QueryCommand).resolves({ Count: 2 });
     expect((await call("POST /v1/domains", { body: { domain: "zetca.pro" } })).status).toBe(409);
-    ddb.on(QueryCommand).resolves({ Count: 0 });
-    ddb.on(PutCommand).rejects(new ConditionalCheckFailedException({ message: "x", $metadata: {} }));
+    ddb.on(QueryCommand).resolves({ Count: 0, Items: [] });
+    ddb.on(GetCommand).resolves({ Item: stored({ status: "active" }) });
+    expect((await call("POST /v1/domains", { body: { domain: "zetca.pro" } })).body.error).toMatch(/already uses Mac Tidar Mail/);
+    ddb.on(GetCommand).resolves({});
+    ddb.on(QueryCommand).callsFake(i => i.IndexName ? { Count: 1 } : { Items: [{ type: "claim", ownerSub: "sub-a" }] });
     expect((await call("POST /v1/domains", { body: { domain: "zetca.pro" } })).status).toBe(409);
     expect(ses.commandCalls(CreateEmailIdentityCommand)).toHaveLength(0);
-  });
-  it("releases its claim when SES already has the identity", async () => {
-    ddb.on(QueryCommand).resolves({ Count: 0 }); ddb.on(PutCommand).resolves({}); ddb.on(DeleteCommand).resolves({});
-    ses.on(CreateEmailIdentityCommand).rejects(Object.assign(new Error("exists"), { name: "AlreadyExistsException" }));
-    expect((await call("POST /v1/domains", { body: { domain: "zetca.pro" } })).status).toBe(409);
-    expect(ddb.commandCalls(DeleteCommand)).toHaveLength(1);
   });
 });
 
@@ -128,7 +139,7 @@ describe("checking and removing", () => {
     expect(r.body.verifiedAt).toBeTruthy();
   });
   it("hides other people's domains", async () => {
-    ddb.on(GetCommand).resolves({ Item: stored({ ownerSub: "sub-b" }) });
+    ddb.on(GetCommand).callsFake(i => ({ Item: i.Key.sk === "META" ? stored({ ownerSub: "sub-b" }) : undefined }));
     expect((await call("GET /v1/domains/{domain}", { domain: "zetca.pro" })).status).toBe(404);
     expect((await call("DELETE /v1/domains/{domain}", { domain: "zetca.pro" })).status).toBe(404);
     expect((await call("GET /v1/domains/{domain}", { domain: "not a domain" })).status).toBe(404);

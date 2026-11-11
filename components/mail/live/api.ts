@@ -18,7 +18,9 @@ export interface SendPayload {
   internal: (CipherPayload & { address: string })[];
   sentCopy: CipherPayload;
 }
-export interface ServerMailbox { address: string; displayName: string; keyState: MailboxKeyState | null; keyVersion: number }
+/** A verified company domain's name and logo, shown to everyone with an address on it. */
+export interface Brand { name: string; logoUrl: string | null }
+export interface ServerMailbox { address: string; displayName: string; keyState: MailboxKeyState | null; keyVersion: number; brand?: Brand | null }
 export interface MessagePatch { read?: boolean; starred?: boolean; folder?: ServerFolder; labels?: string[]; snoozedUntil?: string | null }
 
 export class ApiError extends Error {
@@ -41,16 +43,27 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 
 const mb = (address: string) => `/v1/mailboxes/${encodeURIComponent(address)}`;
 
-/** A connected domain as its owner sees it (see services/mail/src/shared/domains.ts). */
+export type DomainCheck = "ownership" | "dkim" | "mx" | "spf" | "dmarc";
+/** A connected domain (or one being set up) as its owner sees it (see services/mail/src/shared/domains.ts). */
 export interface DomainView {
   domain: string; displayName: string; status: "pending" | "active" | "suspended"; suspendedFor: "dns" | "abuse" | null;
-  checks: { dkim: boolean; mx: boolean; spf: boolean; dmarc: boolean };
-  records: { purpose: string; type: string; name: string; host: string; value: string; priority?: number; check: "dkim" | "mx" | "spf" | "dmarc" }[];
+  checks: Record<DomainCheck, boolean>;
+  records: { purpose: string; type: string; name: string; host: string; value: string; priority?: number; check: DomainCheck }[];
   createdAt: string; checkedAt: string | null; verifiedAt: string | null; expiresAt: string | null;
+  logoUrl: string | null;
+  /** The owner's own sign-in address when it's on this domain (a Business account). */
+  ownAddress: string | null;
 }
 
 /** Someone with an address on a customer domain, as its owner sees them. */
-export interface PersonView { address: string; givenName: string; familyName: string; backupEmail: string; status: "invited" | "active"; createdAt: string; activatedAt: string | null }
+export interface PersonView { address: string; givenName: string; familyName: string; backupEmail: string; status: "invited" | "active"; createdAt: string; activatedAt: string | null; owner?: boolean }
+
+/** A verified company domain's name and logo, for the sign-in screen (no sign-in needed). */
+export async function publicBrand(domain: string): Promise<(Brand & { domain: string }) | null> {
+  const res = await fetch(`${liveConfig.apiUrl}/v1/brand?domain=${encodeURIComponent(domain)}`).catch(() => null);
+  if (!res?.ok) return null;
+  return res.json().catch(() => null);
+}
 
 export const mailApi = {
   mailboxes: () => call<{ mailboxes: ServerMailbox[] }>("GET", "/v1/mailboxes").then(r => r.mailboxes),
@@ -61,7 +74,21 @@ export const mailApi = {
   sessionKey: (id: string) => call<{ clientKey: string }>("GET", `/v1/sessions/${encodeURIComponent(id)}/key`).then(r => r.clientKey),
   endSession: (id: string) => call<{ deleted: boolean }>("DELETE", `/v1/sessions/${encodeURIComponent(id)}`),
   endAllSessions: () => call<{ deleted: number }>("DELETE", "/v1/sessions"),
-  domains: () => call<{ domains: DomainView[]; limit: number }>("GET", "/v1/domains"),
+  /** `businessDomain` is set for Business accounts: the one domain their address is on. */
+  domains: () => call<{ domains: DomainView[]; limit: number; businessDomain: string | null }>("GET", "/v1/domains"),
+  renameDomain: (domain: string, displayName: string) => call<DomainView>("PATCH", `/v1/domains/${encodeURIComponent(domain)}`, { displayName }),
+  /** Uploads a company logo straight to storage, then attaches it to the domain. */
+  async uploadLogo(domain: string, file: File): Promise<DomainView> {
+    const form = await call<{ url: string; fields: Record<string, string>; key: string; maxBytes: number }>("POST", `/v1/domains/${encodeURIComponent(domain)}/logo`, { contentType: file.type });
+    if (file.size > form.maxBytes) throw new ApiError(400, `The logo must be ${Math.round(form.maxBytes / 1024 / 1024)} MB or smaller.`);
+    const body = new FormData();
+    for (const [k, v] of Object.entries(form.fields)) body.append(k, v);
+    body.append("file", file);
+    const res = await fetch(form.url, { method: "POST", body });
+    if (!res.ok) throw new ApiError(res.status, "The logo couldn’t be uploaded. Use a PNG, JPEG or WebP image up to 1 MB.");
+    return call<DomainView>("PUT", `/v1/domains/${encodeURIComponent(domain)}/logo`, { key: form.key });
+  },
+  removeLogo: (domain: string) => call<DomainView>("DELETE", `/v1/domains/${encodeURIComponent(domain)}/logo`),
   connectDomain: (domain: string, displayName: string) => call<DomainView>("POST", "/v1/domains", { domain, displayName }),
   checkDomain: (domain: string) => call<DomainView>("POST", `/v1/domains/${encodeURIComponent(domain)}/check`),
   removeDomain: (domain: string) => call<{ deleted: boolean }>("DELETE", `/v1/domains/${encodeURIComponent(domain)}`),

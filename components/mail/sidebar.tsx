@@ -2,6 +2,7 @@
 
 import { folderMatch, useMail } from "./store";
 import { BrandMark } from "../brand";
+import { useLiveSession } from "./live/gate";
 import { Icon, labelDot } from "./ui";
 
 const mailboxes: [string, string, string][] = [
@@ -11,6 +12,7 @@ const mailboxes: [string, string, string][] = [
 
 export function Sidebar() {
   const { box, folder, setFolder, compose, setDialog, sidebarOpen, setSidebarOpen, collapsed } = useMail();
+  const { brand } = useLiveSession();
   const count = (id: string) => {
     const ms = box.messages.filter(m => folderMatch(id, m));
     if (id === "inbox") return new Set(ms.filter(m => !m.read && m.category === "primary").map(m => m.thread)).size;
@@ -25,8 +27,14 @@ export function Sidebar() {
       <aside className={`fixed left-0 top-0 h-dvh w-64 bg-m-sb border-r border-m-sb-line flex flex-col z-50 shadow-[0_1px_8px_rgba(0,0,0,0.04)] transition-transform ${collapsed ? "lg:-translate-x-full" : "lg:translate-x-0"} ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="h-14 px-gutter flex items-center justify-between">
           <button type="button" onClick={() => setFolder("inbox")} className="flex items-center gap-space-sm min-w-0 text-left" title="Inbox">
-            <BrandMark className="h-7" />
-            <span className="t-headline-sm text-m-sb-strong truncate tracking-tight">Mac Tidar Mail</span>
+            {brand ? <>
+              {/* eslint-disable-next-line @next/next/no-img-element -- static export serves images unoptimized */}
+              {brand.logoUrl ? <img src={brand.logoUrl} alt="" className="h-7 w-7 rounded-m object-contain bg-white shrink-0" /> : <BrandMark className="h-7" />}
+              <span className="min-w-0 leading-tight"><span className="block t-headline-sm text-m-sb-strong truncate tracking-tight">{brand.name}</span><span className="block t-label-sm text-m-sb-muted truncate">on Mac Tidar Mail</span></span>
+            </> : <>
+              <BrandMark className="h-7" />
+              <span className="t-headline-sm text-m-sb-strong truncate tracking-tight">Mac Tidar Mail</span>
+            </>}
           </button>
         </div>
 

@@ -8,13 +8,13 @@
 // Never logs names, emails or other profile fields.
 import { AdminDeleteUserCommand, CognitoIdentityProviderClient, ListUsersCommand } from "@aws-sdk/client-cognito-identity-provider";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, GetCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand } from "@aws-sdk/lib-dynamodb";
 import type { CustomMessageTriggerEvent, PreSignUpTriggerEvent } from "aws-lambda";
-import { parseAddress, reservationKey, validateProfile, type Reservation } from "../shared/accounts";
+import { parseAddress, parseLocalPart, reservationKey, validateBusinessProfile, validateProfile, type Reservation } from "../shared/accounts";
 import { mailboxPk, META_SK } from "../shared/table";
-import { domainKey, personKey, type DomainItem } from "../shared/domains";
+import { CLAIM_PREFIX, domainKey, MAX_CLAIMS_PER_DOMAIN, parseDomain, PENDING_DOMAIN_DAYS, personKey, signupKey, type DomainItem, type SignupItem } from "../shared/domains";
 
-export interface AuthConfig { table: string; signupDomain: string; localDomains: string[] }
+export interface AuthConfig { table: string; signupDomain: string; localDomains: string[]; /** Where published company logos are served (CloudFront). */ brandUrl?: string }
 export interface AuthDeps { ddb: DynamoDBDocumentClient; cognito: CognitoIdentityProviderClient; config: AuthConfig; now?: () => Date }
 
 // The pool ID comes in the scheduled event: the pool names this function, so the function
@@ -28,6 +28,7 @@ export function createHandler({ ddb, cognito, config, now = () => new Date() }: 
     const username = event.userName;
     if (username !== username.trim().toLowerCase()) throw new Error("Addresses must be lowercase");
     if (event.triggerSource === "PreSignUp_AdminCreateUser") return invited(event);
+    if (username.split("@")[1] !== config.signupDomain) return business(event);
     const { address, reserved } = parseAddress(username, config.signupDomain);
     const profile = validateProfile(event.request.userAttributes, config.localDomains, now());
 
@@ -42,6 +43,36 @@ export function createHandler({ ddb, cognito, config, now = () => new Date() }: 
       if (reserved) throw new Error("That address is reserved. Please choose another.");
     }
     console.log(JSON.stringify({ event: "pre-sign-up-ok", reserved: reservedForThisEmail }));
+    return event;
+  }
+
+  /**
+   * A Business sign-up: the address is on the company's own domain, which they connect right after.
+   * Several people may sign up on a domain that isn't verified yet; whoever proves control of its
+   * DNS first gets it, and the others' accounts are removed (see the API's claims).
+   */
+  async function business(event: PreSignUpTriggerEvent) {
+    const username = event.userName, at = username.lastIndexOf("@");
+    const domain = username.slice(at + 1);
+    let local: string;
+    try {
+      local = parseLocalPart(username.slice(0, at));
+      if (parseDomain(domain, config.localDomains) !== domain) throw new Error();
+    } catch { throw new Error("Use an address on your company's domain, like you@yourcompany.com."); }
+    const address = `${local}@${domain}`;
+    const [{ Item: d }, { Item: meta }, claimCount] = await Promise.all([
+      ddb.send(new GetCommand({ TableName: config.table, Key: domainKey(domain) })),
+      ddb.send(new GetCommand({ TableName: config.table, Key: { pk: mailboxPk(address), sk: META_SK } })),
+      ddb.send(new QueryCommand({ TableName: config.table, KeyConditionExpression: "pk = :p AND begins_with(sk, :c)", ExpressionAttributeValues: { ":p": domainKey(domain).pk, ":c": CLAIM_PREFIX }, Select: "COUNT" })),
+    ]);
+    if (d) throw new Error(`${(d as DomainItem).displayName} already uses Mac Tidar Mail. Ask whoever manages it for an address.`);
+    if (meta) throw new Error("That address is taken. Please choose another.");
+    validateBusinessProfile(event.request.userAttributes, [domain, ...config.localDomains]);
+    if ((claimCount?.Count ?? 0) >= MAX_CLAIMS_PER_DOMAIN) throw new Error("Too many people are setting up that domain right now. Try again in a few days.");
+    const at2 = now();
+    const signup: SignupItem = { ...signupKey(domain, address), type: "signup", address, createdAt: at2.toISOString(), expiresAt: Math.floor(at2.getTime() / 1000) + (PENDING_DOMAIN_DAYS + 4) * 86400 };
+    await ddb.send(new PutCommand({ TableName: config.table, Item: signup }));
+    console.log(JSON.stringify({ event: "pre-sign-up-business-ok" }));
     return event;
   }
 
@@ -64,10 +95,14 @@ export function createHandler({ ddb, cognito, config, now = () => new Date() }: 
     const domain = event.userName.split("@")[1] ?? "";
     const { Item } = await ddb.send(new GetCommand({ TableName: config.table, Key: domainKey(domain) }));
     // The message is sent as HTML: escape the owner-chosen name (validation already refuses < and >).
-    const name = ((Item as DomainItem | undefined)?.displayName ?? domain).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const d = Item as DomainItem | undefined;
+    const name = (d?.displayName ?? domain).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    // The company's logo, from our own CDN; its key is one we generated (logos/<domain>/<hex>.<ext>).
+    const logo = config.brandUrl && d?.logoKey && /^logos\/[a-z0-9.-]+\/[0-9a-f]{24}\.(png|jpg|webp)$/.test(d.logoKey)
+      ? `<img src="${config.brandUrl}/${d.logoKey}" alt="${name}" width="56" height="56" style="width:56px;height:56px;object-fit:contain;border-radius:10px"><br><br>` : "";
     const { codeParameter, usernameParameter } = event.request;
     event.response.emailSubject = `You’ve been added to ${(Item as DomainItem | undefined)?.displayName ?? domain}’s email`;
-    event.response.emailMessage = [
+    event.response.emailMessage = logo + [
       `Hello,`, ``,
       `${name} has given you an email address on Mac Tidar Mail:`, ``,
       `Your address: ${usernameParameter}`,
@@ -123,6 +158,7 @@ export const handler = (event: PreSignUpTriggerEvent | CustomMessageTriggerEvent
       table: env("MAIL_TABLE"),
       signupDomain: env("SIGNUP_DOMAIN").trim().toLowerCase(),
       localDomains: env("LOCAL_MAIL_DOMAINS").split(",").map(d => d.trim().toLowerCase()),
+      brandUrl: process.env.BRAND_URL?.replace(/\/$/, "") || undefined,
     },
   });
   return cached(event);

@@ -111,5 +111,15 @@ export function validateProfile(attrs: Record<string, string | undefined>, local
   return { email, givenName, familyName, birthdate, phone, gender, country, ...(middleName ? { middleName } : {}) };
 }
 
+const BUSINESS_ALLOWED = new Set(["email", "given_name", "family_name"]);
+/** A Business sign-up's profile: their name and a backup email off the domain they're connecting. */
+export function validateBusinessProfile(attrs: Record<string, string | undefined>, refusedDomains: string[]): { email: string; givenName: string; familyName: string } {
+  for (const k of Object.keys(attrs)) if (!BUSINESS_ALLOWED.has(k)) throw new BadRequest("Unexpected sign-up field");
+  const email = parseBackupEmail(attrs.email, refusedDomains);
+  const givenName = parseName(attrs.given_name, "first"), familyName = parseName(attrs.family_name, "last");
+  if (/mac\s*-?\s*tidar/i.test(`${givenName} ${familyName}`)) throw new BadRequest("Names can’t include “Mac Tidar”");
+  return { email, givenName, familyName };
+}
+
 /** The name people see on mail from a new mailbox. */
 export const displayNameOf = (p: { givenName: string; familyName: string }) => `${p.givenName} ${p.familyName}`.slice(0, 64);

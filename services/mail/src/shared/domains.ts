@@ -12,9 +12,16 @@ export const MAX_PEOPLE_PER_DOMAIN = 25;
 export const DOMAIN_DAILY_RECIPIENT_LIMIT = 500;
 /** A domain that hasn't passed its checks by then is released, so nobody can sit on a name. */
 export const PENDING_DOMAIN_DAYS = 3;
+/** People setting up the same domain at once; only the one whose ownership record appears wins. */
+export const MAX_CLAIMS_PER_DOMAIN = 25;
+/** Reminders to a pending claim's owner, by its age. */
+export const REMIND_AFTER_MS = 86400_000;
+export const WARN_AFTER_MS = 2 * 86400_000;
 
 export type DomainStatus = "pending" | "active" | "suspended";
 export interface DomainChecks { dkim: boolean; mx: boolean; spf: boolean; dmarc: boolean }
+/** A pending claim also needs its own ownership record, which says *who* controls the DNS. */
+export interface ClaimChecks extends DomainChecks { ownership: boolean }
 
 /** `DOMAIN#<name>/META`. Listed per owner through gsi1 (`DOMAINS#<sub>`). */
 export interface DomainItem {
@@ -32,12 +39,45 @@ export interface DomainItem {
   verifiedAt?: string;
   /** Why it was suspended. DNS suspensions lift by themselves once the records are back; abuse ones don't. */
   suspendedFor?: "dns" | "abuse";
+  /** The company logo in the brand bucket (`logos/…`), shown to everyone on the domain. */
+  logoKey?: string;
   gsi1pk: string; gsi1sk: string;
   /** Every domain shares one gsi2 partition so the daily check can list them all. */
   gsi2pk: typeof ALL_DOMAINS; gsi2sk: string;
 }
 
+/**
+ * Someone setting up a domain that isn't verified yet: `DOMAIN#<name>/CLAIM#<sub>`. Several people
+ * may claim the same name; DKIM and MX are shared (one SES identity), so what decides is each
+ * claim's own ownership TXT record. The first claim whose record appears becomes the domain.
+ */
+export interface ClaimItem {
+  pk: string; sk: string; type: "claim";
+  domain: string; ownerSub: string; ownerAddress: string; displayName: string;
+  /** Goes in `_mactidar.<domain>` as `mactidar-verify=<token>`. */
+  token: string;
+  dkimTokens: string[];
+  checks: ClaimChecks;
+  createdAt: string; checkedAt?: string;
+  /** An uploaded logo waiting for verification (`uploads/…`, never served publicly). */
+  pendingLogoKey?: string;
+  remindedAt?: string; warnedAt?: string;
+  gsi1pk: string; gsi1sk: string;
+  gsi2pk: typeof ALL_CLAIMS; gsi2sk: string;
+}
+
+/** A business sign-up's address on a domain that isn't verified yet, so the winner can remove the others'. */
+export interface SignupItem { pk: string; sk: string; type: "signup"; address: string; createdAt: string; expiresAt: number }
+
 export const domainKey = (domain: string) => ({ pk: `DOMAIN#${domain}`, sk: "META" as const });
+export const CLAIM_PREFIX = "CLAIM#";
+export const claimKey = (domain: string, sub: string) => ({ pk: `DOMAIN#${domain}`, sk: `${CLAIM_PREFIX}${sub}` });
+export const ALL_CLAIMS = "CLAIMS";
+export const SIGNUP_PREFIX = "SIGNUP#";
+export const signupKey = (domain: string, address: string) => ({ pk: `DOMAIN#${domain}`, sk: `${SIGNUP_PREFIX}${address}` });
+export const NO_CLAIM_CHECKS: ClaimChecks = { ownership: false, dkim: false, mx: false, spf: false, dmarc: false };
+/** True when the account's own sign-in address is on `domain` (it signed up through Business). */
+export const ownsAddressOn = (ownerAddress: string, domain: string) => ownerAddress.split("@")[1] === domain;
 export const domainsGsi1 = (ownerSub: string) => `DOMAINS#${ownerSub}`;
 /** A person the owner added: `DOMAIN#<name>/PERSON#<address>`, listed with the domain's own partition. */
 export const PERSON_PREFIX = "PERSON#";
@@ -94,8 +134,20 @@ export function parseDisplayName(raw: unknown, domain: string): string {
   return name;
 }
 
-export type RecordPurpose = "DKIM" | "MX" | "SPF" | "DMARC";
-export interface DnsRecord { purpose: RecordPurpose; type: "CNAME" | "MX" | "TXT"; /** Full name */ name: string; /** Name relative to the domain ("@" for the domain itself) */ host: string; value: string; priority?: number; check: keyof DomainChecks }
+export type RecordPurpose = "Ownership" | "DKIM" | "MX" | "SPF" | "DMARC";
+export interface DnsRecord { purpose: RecordPurpose; type: "CNAME" | "MX" | "TXT"; /** Full name */ name: string; /** Name relative to the domain ("@" for the domain itself) */ host: string; value: string; priority?: number; check: keyof ClaimChecks }
+
+export const ownershipName = (domain: string) => `_mactidar.${domain}`;
+export const ownershipValue = (token: string) => `mactidar-verify=${token}`;
+/** The record that proves this claim, not just someone, controls the domain's DNS. */
+export const ownershipRecord = (domain: string, token: string): DnsRecord =>
+  ({ purpose: "Ownership", type: "TXT", name: ownershipName(domain), host: "_mactidar", value: ownershipValue(token), check: "ownership" });
+
+/** True when the domain's `_mactidar` TXT records include this claim's token. */
+export async function checkOwnership(domain: string, token: string, dns: Resolver): Promise<boolean> {
+  const txt = await orEmpty(dns.resolveTxt(ownershipName(domain)));
+  return txt.some(r => r.join("").trim() === ownershipValue(token));
+}
 
 export const inboundMx = (region: string) => `inbound-smtp.${region}.amazonaws.com`;
 
@@ -149,6 +201,13 @@ export function evaluate(item: Pick<DomainItem, "status" | "suspendedFor" | "ver
   if (item.status === "pending") return { status: "pending" };
   return { status: "suspended", suspendedFor: "dns", verifiedAt: item.verifiedAt };
 }
+
+/** Company logos: small raster images only. SVG can carry scripts, so it's refused. */
+export const MAX_LOGO_BYTES = 1024 * 1024;
+export const LOGO_TYPES: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp" };
+/** Where a logo is uploaded (private) and where a verified domain's logo is served from (public). */
+export const uploadPrefix = (domain: string, sub: string) => `uploads/${domain}/${sub}/`;
+export const logoPrefix = (domain: string) => `logos/${domain}/`;
 
 /** When an unverified domain is released. */
 export const pendingExpiry = (createdAt: string) => new Date(Date.parse(createdAt) + PENDING_DOMAIN_DAYS * 86400_000);

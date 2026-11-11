@@ -50,12 +50,13 @@ const skins: Record<SkinKey, Skin> = {
 };
 
 
-const navLinks = [["#features", "Features"], ["#workspace", "Workspace"], ["#privacy", "Privacy"], ["#philosophy", "Values"], ["#faqs", "FAQs"]];
+const navLinks = [["#features", "Features"], ["#workspace", "Workspace"], ["#privacy", "Privacy"], ["/business/", "Business"], ["#faqs", "FAQs"]];
 
 const faqs: [string, ReactNode][] = [
   ["What is Mac Tidar Mail?", "Mac Tidar Mail is zero-access encrypted email with your own @mactidar.com address. Your mail is encrypted with a key only you hold, so it can only be read in your browser after you unlock it. Mac Tidar can't read it."],
   ["How do I create an account?", "Click 'Get Started' or 'Create Your Account' on this page. Pick your address, add your name, date of birth and phone number, and a backup email at another provider. We send a code to the backup email to confirm it's yours."],
-  ["Will my email address end in @mactidar.com?", <>Yes. Every account gets a <strong className="text-forest">yourname@mactidar.com</strong> address, and that address is how you sign in. Your backup email is only used to reset your password; you can&apos;t sign in with it.</>],
+  ["Will my email address end in @mactidar.com?", <>A personal account gets a <strong className="text-forest">yourname@mactidar.com</strong> address, and that address is how you sign in. With <a className="text-forest underline" href="/business/">Mac Tidar Mail for Business</a>, your team&apos;s addresses are on your own domain instead, like <strong className="text-forest">you@yourcompany.com</strong>. Your backup email is only used to reset your password; you can&apos;t sign in with it.</>],
+  ["Can my company use its own domain?", <>Yes. <a className="text-forest underline" href="/business/">Sign up for Business</a> with an address on your domain, add the DNS records we show you (we check every 15 minutes and email you when it&apos;s verified), then create addresses for up to 25 people. Your company name and logo appear at the top of everyone&apos;s inbox. Mail stays end-to-end encrypted: you decide who has an address, but neither you nor Mac Tidar can read anyone&apos;s mail or reset their password for them.</>],
   ["What happens if I forget my password?", "Reset it with a code sent to your backup email. Because only your password unlocks your key, older mail then needs your recovery file (made when you create your account) or a device where you're still signed in. Mac Tidar can't recover it for you, which is the point."],
   ["Can Mac Tidar read my email?", "No. Mail from outside is encrypted with your key the moment it arrives and the readable copy is deleted. Your drafts, labels and settings are encrypted in your browser. Mail between Mac Tidar addresses is encrypted in the sender's browser and signed, end to end."],
   ["Can I use Mac Tidar Mail on my phone?", "Yes, in your phone's browser at mail.mactidar.com. The layout adapts to small screens. Native apps aren't available yet."],

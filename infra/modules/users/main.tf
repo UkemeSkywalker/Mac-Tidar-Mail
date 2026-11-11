@@ -14,6 +14,7 @@ variable "table_arn" { type = string }
 variable "data_key_arn" { type = string }
 variable "alerts_topic_arn" { type = string }
 variable "lambda_source_dir" { type = string }
+variable "brand_url" { type = string }
 
 locals {
   function_name = "mactidar-mail-auth"
@@ -161,11 +162,22 @@ data "aws_iam_policy_document" "auth" {
   }
   statement {
     sid       = "ReadReservationsAndMailboxes"
-    actions   = ["dynamodb:GetItem"]
+    actions   = ["dynamodb:GetItem", "dynamodb:Query"]
     resources = [var.table_arn]
   }
   statement {
-    actions   = ["kms:Decrypt"]
+    # Business sign-ups record their address on the domain, so the domain's eventual owner can remove the others.
+    sid       = "RecordBusinessSignUps"
+    actions   = ["dynamodb:PutItem"]
+    resources = [var.table_arn]
+    condition {
+      test     = "ForAllValues:StringLike"
+      variable = "dynamodb:LeadingKeys"
+      values   = ["DOMAIN#*"]
+    }
+  }
+  statement {
+    actions   = ["kms:Decrypt", "kms:GenerateDataKey"]
     resources = [var.data_key_arn]
     condition {
       test     = "StringEquals"
@@ -201,6 +213,7 @@ resource "aws_lambda_function" "auth" {
     variables = {
       MAIL_TABLE                          = var.table_name
       SIGNUP_DOMAIN                       = var.root_domain
+      BRAND_URL                           = var.brand_url
       LOCAL_MAIL_DOMAINS                  = join(",", var.local_domains)
       NODE_OPTIONS                        = "--enable-source-maps"
       AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1"
