@@ -10,6 +10,7 @@ import type { APIGatewayProxyEventV2WithJWTAuthorizer, PreSignUpTriggerEvent } f
 import { beforeEach, describe, expect, it } from "vitest";
 import { createHandler, type UserAdmin } from "../../src/api/handler";
 import { createHandler as createAuth } from "../../src/auth/handler";
+import { sentEmail } from "../helpers";
 import { NO_CLAIM_CHECKS, type ClaimItem, type DomainItem, type PersonItem, type Resolver } from "../../src/shared/domains";
 
 const MX = "inbound-smtp.af-south-1.amazonaws.com";
@@ -121,7 +122,7 @@ describe("Verify now on a claim", () => {
     expect(removed).not.toContain("ceo@zetca.pro");
     // The SES identity is now the domain's: never deleted while it's verified.
     expect(ses.commandCalls(DeleteEmailIdentityCommand)).toHaveLength(0);
-    const sent = ses.commandCalls(SendEmailCommand).map(c => [c.args[0].input.Destination?.ToAddresses?.[0], c.args[0].input.Content?.Simple?.Subject?.Data]);
+    const sent = await Promise.all(ses.commandCalls(SendEmailCommand).map(async c => [c.args[0].input.Destination?.ToAddresses?.[0], (await sentEmail(c.args[0].input)).subject]));
     expect(sent).toEqual(expect.arrayContaining([["squat@gmail.com", "zetca.pro was verified by someone else"], ["ceo.backup@gmail.com", "zetca.pro is live on Mac Tidar Mail"]]));
   });
 
@@ -148,9 +149,10 @@ describe("the 15-minute check", () => {
     ses.on(GetEmailIdentityCommand).resolves({ DkimAttributes: { Status: "PENDING" } });
     expect(await api().checkAllClaims()).toEqual({ checked: 2, verified: 0, released: 1, reminded: 2, failed: 0 });
     expect(removed).toEqual(["ceo@zetca.pro"]);
-    const subjects = ses.commandCalls(SendEmailCommand).map(c => c.args[0].input.Content?.Simple?.Subject?.Data);
+    const mails = await Promise.all(ses.commandCalls(SendEmailCommand).map(c => sentEmail(c.args[0].input)));
+    const subjects = mails.map(m => m.subject);
     expect(subjects).toEqual(["zetca.pro was released", "late.com is waiting for its DNS records", "later.com will be released tomorrow"]);
-    for (const c of ses.commandCalls(SendEmailCommand)) expect(c.args[0].input.Content?.Simple?.Body?.Text?.Data).not.toMatch(/https?:\/\//);
+    for (const m of mails) { expect(m.text).not.toMatch(/https?:\/\//); expect(m.html).not.toMatch(/href=/); }
   });
 });
 
@@ -255,8 +257,9 @@ describe("invite email", () => {
     const ev = () => ({ triggerSource: "CustomMessage_AdminCreateUser", userName: "ana@zetca.pro", request: { codeParameter: "{####}", usernameParameter: "{username}" }, response: {} }) as never;
     table({ "DOMAIN#zetca.pro|META": d });
     const out = await auth("https://cdn.example")(ev()) as { response: { emailMessage: string } };
-    expect(out.response.emailMessage).toMatch(/^<img src="https:\/\/cdn\.example\/logos\/zetca\.pro\/0123456789abcdef01234567\.png" alt="Zetca &amp; Co"/);
+    expect(out.response.emailMessage).toContain('<img src="https://cdn.example/logos/zetca.pro/0123456789abcdef01234567.png"');
+    expect(out.response.emailMessage).toContain("Zetca &amp; Co");
     table({ "DOMAIN#zetca.pro|META": { ...d, logoKey: "logos/zetca.pro/x.svg\" onerror=\"alert(1)" } });
-    expect(((await auth("https://cdn.example")(ev())) as { response: { emailMessage: string } }).response.emailMessage).not.toContain("<img");
+    expect(((await auth("https://cdn.example")(ev())) as { response: { emailMessage: string } }).response.emailMessage).not.toContain("onerror");
   });
 });

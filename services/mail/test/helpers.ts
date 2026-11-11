@@ -16,3 +16,10 @@ export function containsPlaintext(haystack: string | Uint8Array, needle: string)
   if (typeof haystack !== "string") return Buffer.from(haystack).includes(Buffer.from(needle, "utf8"));
   return false;
 }
+
+/** Parses the raw MIME message from an SES SendEmail call (subject, text, html, attachments). */
+export async function sentEmail(input: { Content?: { Raw?: { Data?: Uint8Array } } }) {
+  const { simpleParser } = await import("mailparser");
+  const m = await simpleParser(Buffer.from(input.Content!.Raw!.Data!));
+  return { subject: m.subject ?? "", text: m.text ?? "", html: typeof m.html === "string" ? m.html : "", attachments: m.attachments };
+}

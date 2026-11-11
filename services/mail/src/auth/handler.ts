@@ -12,6 +12,7 @@ import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand } from "@a
 import type { CustomMessageTriggerEvent, PreSignUpTriggerEvent } from "aws-lambda";
 import { parseAddress, parseLocalPart, reservationKey, validateBusinessProfile, validateProfile, type Reservation } from "../shared/accounts";
 import { mailboxPk, META_SK } from "../shared/table";
+import { renderEmail, type EmailBrand, type EmailContent } from "../shared/email";
 import { CLAIM_PREFIX, domainKey, MAX_CLAIMS_PER_DOMAIN, parseDomain, PENDING_DOMAIN_DAYS, personKey, signupKey, type DomainItem, type SignupItem } from "../shared/domains";
 
 export interface AuthConfig { table: string; signupDomain: string; localDomains: string[]; /** Where published company logos are served (CloudFront). */ brandUrl?: string }
@@ -89,29 +90,55 @@ export function createHandler({ ddb, cognito, config, now = () => new Date() }: 
     return event;
   }
 
-  /** The invite email for someone added to a customer domain. Other messages use the pool's templates. */
+  /**
+   * Every email Cognito sends (sign-up and reset codes, team invites), in the same branded layout as
+   * our other emails. Addresses on a verified company domain get that company's name and logo.
+   */
   async function customMessage(event: CustomMessageTriggerEvent) {
-    if (event.triggerSource !== "CustomMessage_AdminCreateUser") return event;
-    const domain = event.userName.split("@")[1] ?? "";
-    const { Item } = await ddb.send(new GetCommand({ TableName: config.table, Key: domainKey(domain) }));
-    // The message is sent as HTML: escape the owner-chosen name (validation already refuses < and >).
-    const d = Item as DomainItem | undefined;
-    const name = (d?.displayName ?? domain).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    // The company's logo, from our own CDN; its key is one we generated (logos/<domain>/<hex>.<ext>).
-    const logo = config.brandUrl && d?.logoKey && /^logos\/[a-z0-9.-]+\/[0-9a-f]{24}\.(png|jpg|webp)$/.test(d.logoKey)
-      ? `<img src="${config.brandUrl}/${d.logoKey}" alt="${name}" width="56" height="56" style="width:56px;height:56px;object-fit:contain;border-radius:10px"><br><br>` : "";
     const { codeParameter, usernameParameter } = event.request;
-    event.response.emailSubject = `You’ve been added to ${(Item as DomainItem | undefined)?.displayName ?? domain}’s email`;
-    event.response.emailMessage = logo + [
-      `Hello,`, ``,
-      `${name} has given you an email address on Mac Tidar Mail:`, ``,
-      `Your address: ${usernameParameter}`,
-      `Temporary password: ${codeParameter}`, ``,
-      `Sign in at mail.${config.signupDomain} within 3 days, then choose your own password. Only you will know it: your mail is encrypted with a key made from it, so nobody else can read your mail, not ${name} and not Mac Tidar.`, ``,
-      `This email is your backup address. It's only used to reset your password; you can't sign in with it.`, ``,
-      `If you weren't expecting this, you can ignore it.`, ``,
-      `Mac Tidar Mail`,
-    ].join("<br>");
+    const domain = event.userName.split("@")[1] ?? "";
+    let d: DomainItem | undefined;
+    // A lookup failure just means a plain Mac Tidar-branded email; the code must still go out.
+    if (domain && domain !== config.signupDomain) try { d = (await ddb.send(new GetCommand({ TableName: config.table, Key: domainKey(domain) })))?.Item as DomainItem | undefined; } catch { d = undefined; }
+    const company = d && d.status !== "pending" ? d : undefined;
+    // A logo only from our own CDN, with a key we generated (logos/<domain>/<hex>.<ext>).
+    const logo = company && config.brandUrl && company.logoKey && /^logos\/[a-z0-9.-]+\/[0-9a-f]{24}\.(png|jpg|webp)$/.test(company.logoKey) ? `${config.brandUrl}/${company.logoKey}` : undefined;
+    const brand: EmailBrand = company ? { name: company.displayName, tagline: "on Mac Tidar Mail", logo } : { name: "Mac Tidar Mail", tagline: "End-to-end encrypted email", logo: `https://mail.${config.signupDomain}/brand/mark-email.png` };
+    const signIn = `Open **mail.${config.signupDomain}** yourself to sign in.`;
+    let subject: string, content: EmailContent;
+    switch (event.triggerSource) {
+      case "CustomMessage_AdminCreateUser": {
+        const name = company?.displayName ?? domain;
+        subject = `You’ve been added to ${name}’s email`;
+        content = {
+          preview: `${name} has given you an email address on Mac Tidar Mail.`, title: `Your ${name} email is ready`,
+          body: [`**${name}** has given you an email address on Mac Tidar Mail. Sign in within 3 days with this temporary password, then choose your own.`],
+          facts: [["Your address", usernameParameter ?? "{username}"]], code: codeParameter,
+          after: [`${signIn} Only you will know your new password: your mail is encrypted with a key made from it, so nobody else can read it, not ${name} and not Mac Tidar.`,
+            "This email is your backup address. It's only used to reset your password; you can't sign in with it. If you weren't expecting this, you can ignore it."],
+        };
+        break;
+      }
+      case "CustomMessage_SignUp": case "CustomMessage_ResendCode":
+        subject = "Your Mac Tidar Mail code";
+        content = { preview: "Your verification code is inside.", title: "Confirm your email", body: ["Enter this code to finish creating your account:"], code: codeParameter,
+          after: ["It's valid for 24 hours. If you didn't ask for it, you can ignore this email."] };
+        break;
+      case "CustomMessage_ForgotPassword":
+        subject = "Reset your Mac Tidar Mail password";
+        content = { preview: "Your password reset code is inside.", title: "Reset your password", body: [`Enter this code to choose a new password for **${event.userName}**:`], code: codeParameter,
+          after: ["Your mail is never lost: new mail works straight away, and older mail can be opened again with your recovery file or a signed-in device.", "If you didn't ask for this, you can ignore it; your password hasn't changed."] };
+        break;
+      case "CustomMessage_UpdateUserAttribute": case "CustomMessage_VerifyUserAttribute":
+        subject = "Confirm your new backup email";
+        content = { preview: "Your verification code is inside.", title: "Confirm your backup email", body: ["Enter this code to confirm this as the backup email for your Mac Tidar Mail account:"], code: codeParameter,
+          after: ["If you didn't ask for this, you can ignore it."] };
+        break;
+      default:
+        return event; // other triggers keep the pool's own templates
+    }
+    event.response.emailSubject = subject;
+    event.response.emailMessage = renderEmail(brand, content).html;
     return event;
   }
 

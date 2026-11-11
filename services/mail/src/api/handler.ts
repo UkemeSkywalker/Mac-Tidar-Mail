@@ -10,6 +10,9 @@ import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyStructured
 import { normalizeAddress } from "../crypto/keys";
 import { CreateEmailIdentityCommand, DeleteEmailIdentityCommand, GetEmailIdentityCommand, SendEmailCommand, SESv2Client } from "@aws-sdk/client-sesv2";
 import { authoritativeResolver, DnsUnavailable } from "../shared/dns";
+import { renderEmail, type EmailContent, type EmailRecord } from "../shared/email";
+import { MAC_TIDAR_MARK_PNG } from "../shared/assets/mark";
+import MailComposer from "nodemailer/lib/mail-composer";
 import { randomBytes } from "node:crypto";
 import { AdminCreateUserCommand, AdminDeleteUserCommand, AdminGetUserCommand, CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-provider";
 import { draftSk, folderGsi1, mailboxPk, META_SK, ownerGsi1, SETTINGS_SK, type DraftItem, type Folder, type MailboxMeta, type MessageItem, type SettingsItem } from "../shared/table";
@@ -136,26 +139,55 @@ export function createHandler({ ddb, s3, ses, config, account, users, dns, presi
     await ses.send(new DeleteEmailIdentityCommand({ EmailIdentity: domain })).catch(e => { if ((e as Error).name !== "NotFoundException") throw e; });
   }
 
-  /** Emails an account's backup address. Plain text, never links: people open the app themselves. */
-  async function notify(ownerAddress: string, subject: string, lines: string[]) {
+  /** The company an email is about: its name, and its logo (published, or still private while pending). */
+  type BrandSource = { name: string; logoKey?: string };
+  const brandOf = (x: DomainItem | ClaimItem): BrandSource => ({ name: x.displayName, logoKey: x.type === "domain" ? x.logoKey : x.pendingLogoKey });
+
+  /** The logo bytes, attached to the email itself (so a pending domain's logo never needs a public URL). */
+  async function logoAttachment(key: string | undefined): Promise<{ content: Buffer; contentType: string; ext: string } | null> {
+    if (!key || !config.brandBucket) return null;
+    try {
+      const r = await s3.send(new GetObjectCommand({ Bucket: config.brandBucket, Key: key }));
+      const ext = key.split(".").pop()!, contentType = Object.entries(LOGO_TYPES).find(([, e]) => e === ext)?.[0];
+      if (!r.Body || !contentType) return null;
+      return { content: Buffer.from(await r.Body.transformToByteArray()), contentType, ext };
+    } catch { return null; }
+  }
+
+  /**
+   * Emails an account's backup address: a branded HTML email (company logo inline) with a plain-text
+   * twin. Never links: people open the app themselves.
+   */
+  async function notify(ownerAddress: string, subject: string, content: EmailContent, brand?: BrandSource) {
     const acct = await account(ownerAddress).catch(() => null);
     if (!acct?.email || !acct.emailVerified) return;
-    const text = [`Hello,`, ``, ...lines, ``, `Mac Tidar Mail`].join("\n");
-    await ses.send(new SendEmailCommand({ FromEmailAddress: `Mac Tidar Mail <no-reply@${config.signupDomain}>`, Destination: { ToAddresses: [acct.email] },
-      Content: { Simple: { Subject: { Data: subject, Charset: "UTF-8" }, Body: { Text: { Data: text, Charset: "UTF-8" } } } } }))
-      .catch(e => console.error(JSON.stringify({ event: "notice-failed", name: (e as Error).name })));
+    const logo = await logoAttachment(brand?.logoKey);
+    const { html, text } = renderEmail(brand
+      ? { name: brand.name, tagline: "on Mac Tidar Mail", logo: logo ? "cid:logo" : undefined }
+      : { name: "Mac Tidar Mail", tagline: "End-to-end encrypted email", logo: "cid:logo" }, content);
+    const attachments = brand
+      ? (logo ? [{ filename: `logo.${logo.ext}`, content: logo.content, contentType: logo.contentType, cid: "logo", contentDisposition: "inline" as const }] : [])
+      : [{ filename: "mactidar.png", content: Buffer.from(MAC_TIDAR_MARK_PNG, "base64"), contentType: "image/png", cid: "logo", contentDisposition: "inline" as const }];
+    const from = `Mac Tidar Mail <no-reply@${config.signupDomain}>`;
+    try {
+      const raw = await new MailComposer({ from, to: acct.email, subject, text, html, attachments }).compile().build();
+      await ses.send(new SendEmailCommand({ FromEmailAddress: from, Destination: { ToAddresses: [acct.email] }, Content: { Raw: { Data: raw } } }));
+    } catch (e) { console.error(JSON.stringify({ event: "notice-failed", name: (e as Error).name })); }
   }
-  const openYourself = `Open mail.${config.signupDomain} yourself (don't use links in emails) and sign in`;
-  const setupPage = `mail.${config.signupDomain}/business`;
+  const openYourself = `Open **mail.${config.signupDomain}** yourself and sign in`;
+  const setupPage = `**mail.${config.signupDomain}/business**`;
 
   /** Tells a domain's owner (at their backup email) that it stopped or started working. */
-  async function noticeOwner(d: DomainItem, subject: string, line: string) {
-    await notify(d.ownerAddress, subject, [line, ``, `Domain: ${d.domain}`, ``, `${openYourself}, then go to ${setupPage} to see which DNS records need fixing.`]);
+  async function noticeOwner(d: DomainItem, subject: string, title: string, line: string) {
+    await notify(d.ownerAddress, subject, { preview: line, title, body: [line], facts: [["Domain", d.domain]], after: [`${openYourself}, then go to ${setupPage} to see which DNS records need fixing.`] }, brandOf(d));
   }
 
-  const recordLines = (records: DnsRecord[]) => records.map(r => `  ${r.type.padEnd(5)} ${r.host.padEnd(40)} ${r.priority !== undefined ? `${r.priority} ` : ""}${r.value}`);
+  const PURPOSE_LABEL: Record<string, string> = { Ownership: "Ownership", DKIM: "DKIM", MX: "Mail delivery", SPF: "SPF", DMARC: "DMARC" };
+  const emailRecords = (records: DnsRecord[]): EmailRecord[] => records.map(r => ({ type: r.type, host: r.host, value: r.value, priority: r.priority, label: PURPOSE_LABEL[r.purpose] ?? r.purpose }));
   const claimRecords = (c: ClaimItem) => [ownershipRecord(c.domain, c.token), ...dnsRecords(c.domain, c.dkimTokens, config.region)];
-  const missingLines = (c: ClaimItem) => claimRecords(c).filter(r => !c.checks[r.check] && r.check !== "spf" && r.check !== "dmarc").map(r => `  ${r.purpose}: ${r.type} ${r.host}`);
+  /** Records a claim still needs (SPF and DMARC are optional), for reminders. */
+  const missingRecords = (c: ClaimItem) => claimRecords(c).filter(r => !c.checks[r.check] && r.check !== "spf" && r.check !== "dmarc" && !(r.check === "dkim" && c.checks.dkimRecords));
+  const until = (iso: string) => new Date(iso).toUTCString().replace(/:\d\d GMT$/, " GMT");
 
   /** An identity SES may or may not still have; DKIM tokens are the same for everyone claiming it. */
   async function domainIdentity(domain: string): Promise<{ dkimTokens: string[]; dkimVerified: boolean }> {
@@ -196,10 +228,16 @@ export function createHandler({ ddb, s3, ses, config, account, users, dns, presi
    * a domain it never got); "cancelled" is the owner removing it themselves and keeps the account.
    */
   async function releaseClaim(c: ClaimItem, reason: "expired" | "lost" | "cancelled") {
-    if (reason === "expired") await notify(c.ownerAddress, `${c.domain} was released`, [`${c.domain} wasn't verified within 3 days, so it has been released from Mac Tidar Mail.`,
-      ...(ownsAddressOn(c.ownerAddress, c.domain) ? [``, `Your sign-up for ${c.ownerAddress} has been removed with it. You're welcome to sign up again whenever the DNS records are ready.`] : [``, `You can connect it again whenever the DNS records are ready.`])]);
-    if (reason === "lost") await notify(c.ownerAddress, `${c.domain} was verified by someone else`, [`Someone else proved they control the DNS for ${c.domain} (their ownership record appeared first), so your setup has been removed.`,
-      ``, `If that wasn't someone from your company, check who can change the DNS for ${c.domain}.`]);
+    if (reason === "expired") await notify(c.ownerAddress, `${c.domain} was released`, {
+      preview: `${c.domain} wasn't verified within 3 days.`, title: `${c.domain} was released`,
+      body: [`**${c.domain}** wasn't verified within 3 days, so it has been released from Mac Tidar Mail.`,
+        ownsAddressOn(c.ownerAddress, c.domain) ? `Your sign-up for **${c.ownerAddress}** was removed with it. You're welcome to sign up again whenever the DNS records are ready.` : `You can connect it again whenever the DNS records are ready.`],
+    }, brandOf(c));
+    if (reason === "lost") await notify(c.ownerAddress, `${c.domain} was verified by someone else`, {
+      preview: `Someone else proved they control the DNS for ${c.domain}.`, title: `${c.domain} was verified by someone else`,
+      body: [`Someone else proved they control the DNS for **${c.domain}**: their ownership record appeared first, so your setup has been removed.`,
+        `If that wasn't someone from your company, check who can change the DNS for ${c.domain}.`],
+    }, brandOf(c));
     await ddb.send(new DeleteCommand({ TableName: T, Key: claimKey(c.domain, c.ownerSub) }));
     await deleteBrandObject(c.pendingLogoKey);
     const [{ Item: meta }, others] = await Promise.all([ddb.send(new GetCommand({ TableName: T, Key: domainKey(c.domain), ConsistentRead: true })), claimsFor(c.domain)]);
@@ -240,8 +278,12 @@ export function createHandler({ ddb, s3, ses, config, account, users, dns, presi
     console.log(JSON.stringify({ event: "claim-won" }));
     for (const other of (await claimsFor(c.domain)).filter(o => o.ownerSub !== c.ownerSub)) await releaseClaim(other, "lost").catch(e => console.error(JSON.stringify({ event: "claim-release-failed", name: (e as Error).name })));
     await removeOtherSignups(c.domain, c.ownerAddress);
-    await notify(c.ownerAddress, `${c.domain} is live on Mac Tidar Mail`, [`Your DNS records for ${c.domain} are verified. Mail for ${c.domain} now arrives in Mac Tidar Mail, end-to-end encrypted.`, ``,
-      ownsAddressOn(c.ownerAddress, c.domain) ? `${openYourself} with ${c.ownerAddress} to open your mailbox, then go to ${setupPage} to add your team.` : `${openYourself}, then go to ${setupPage} to add your team.`]);
+    await notify(c.ownerAddress, `${c.domain} is live on Mac Tidar Mail`, {
+      preview: `Mail for ${c.domain} now arrives in Mac Tidar Mail.`, title: `${c.domain} is live`,
+      body: [`Your DNS records are verified. Mail for **${c.domain}** now arrives in Mac Tidar Mail, end-to-end encrypted.`,
+        ownsAddressOn(c.ownerAddress, c.domain) ? `${openYourself} with your address to open your mailbox, then go to ${setupPage} to add your team.` : `${openYourself}, then go to ${setupPage} to add your team.`],
+      facts: ownsAddressOn(c.ownerAddress, c.domain) ? [["Your address", c.ownerAddress]] : [["Domain", c.domain]],
+    }, { name: d.displayName, logoKey: d.logoKey });
     return d;
   }
 
@@ -285,13 +327,22 @@ export function createHandler({ ddb, s3, ses, config, account, users, dns, presi
           counts.checked++;
           if ("domain" in r) { counts.verified++; continue; }
           if (!("claim" in r)) continue;
-          const now = new Date().toISOString(), missing = missingLines(r.claim);
+          const now = new Date().toISOString(), missing = emailRecords(missingRecords(r.claim));
           if (age >= WARN_AFTER_MS && !c.warnedAt) {
-            await notify(c.ownerAddress, `${c.domain} will be released tomorrow`, [`${c.domain} still isn't verified. If it isn't by ${pendingExpiry(c.createdAt).toUTCString()}, it's released${ownsAddressOn(c.ownerAddress, c.domain) ? " along with your sign-up" : ""}.`, ``, `Still missing:`, ...missing, ``, `${openYourself}, then go to ${setupPage} for the exact records.`]);
+            await notify(c.ownerAddress, `${c.domain} will be released tomorrow`, {
+              preview: `${c.domain} still isn't verified.`, title: `${c.domain} will be released tomorrow`,
+              body: [`**${c.domain}** still isn't verified. If it isn't by **${until(pendingExpiry(c.createdAt).toISOString())}**, it's released${ownsAddressOn(c.ownerAddress, c.domain) ? " along with your sign-up" : ""}.`,
+                missing.length ? "These records still aren't there:" : "Your records are in place; Amazon is still confirming the DKIM records."],
+              records: missing, after: [`${openYourself}, then go to ${setupPage} for the exact records and a Verify now button.`],
+            }, brandOf(r.claim));
             await ddb.send(new UpdateCommand({ TableName: T, Key: claimKey(c.domain, c.ownerSub), UpdateExpression: "SET warnedAt = :t, remindedAt = if_not_exists(remindedAt, :t)", ConditionExpression: "attribute_exists(pk)", ExpressionAttributeValues: { ":t": now } }));
             counts.reminded++;
           } else if (age >= REMIND_AFTER_MS && !c.remindedAt) {
-            await notify(c.ownerAddress, `${c.domain} is waiting for its DNS records`, [`We're checking ${c.domain} every 15 minutes, and these records aren't there yet:`, ...missing, ``, `DNS changes can take up to a few hours to show. ${openYourself}, then go to ${setupPage} for the exact records and a Verify now button.`]);
+            await notify(c.ownerAddress, `${c.domain} is waiting for its DNS records`, {
+              preview: `A few DNS records for ${c.domain} aren't there yet.`, title: `${c.domain} is waiting for its DNS records`,
+              body: [missing.length ? `We check **${c.domain}** every 15 minutes, and these records aren't there yet:` : `Your records for **${c.domain}** are in place; Amazon is still confirming the DKIM records. We'll email you the moment it's verified.`],
+              records: missing, after: [`${openYourself}, then go to ${setupPage} for the exact records and a Verify now button.`],
+            }, brandOf(r.claim));
             await ddb.send(new UpdateCommand({ TableName: T, Key: claimKey(c.domain, c.ownerSub), UpdateExpression: "SET remindedAt = :t", ConditionExpression: "attribute_exists(pk)", ExpressionAttributeValues: { ":t": now } }));
             counts.reminded++;
           }
@@ -324,10 +375,10 @@ export function createHandler({ ddb, s3, ses, config, account, users, dns, presi
           counts.checked++;
           if (d.status === "active" && next.status === "suspended") {
             counts.suspended++;
-            await noticeOwner(next, "Your domain stopped working with Mac Tidar Mail", `Mail for ${d.domain} has stopped working because its DNS records for Mac Tidar Mail (DKIM or MX) are missing or changed. Mail sent to it may bounce until they're fixed; it starts working again by itself once they are.`);
+            await noticeOwner(next, "Your domain stopped working with Mac Tidar Mail", `${d.domain} stopped working`, `Mail for ${d.domain} has stopped working because its DNS records for Mac Tidar Mail (DKIM or MX) are missing or changed. Mail sent to it may bounce until they're fixed; it starts working again by itself once they are.`);
           } else if (d.status === "suspended" && next.status === "active") {
             counts.restored++;
-            await noticeOwner(next, "Your domain is working again", `The DNS records for ${d.domain} are correct again, so its mail is working with Mac Tidar Mail.`);
+            await noticeOwner(next, "Your domain is working again", `${d.domain} is working again`, `The DNS records for ${d.domain} are correct again, so its mail is working with Mac Tidar Mail.`);
           }
         } catch (e) {
           counts.failed++;
@@ -812,9 +863,14 @@ export function createHandler({ ddb, s3, ses, config, account, users, dns, presi
         try { await ddb.send(new PutCommand({ TableName: T, Item: claim, ConditionExpression: "attribute_not_exists(pk)" })); }
         catch (e) { if (e instanceof ConditionalCheckFailedException) throw new Conflict("You're already setting up that domain."); throw e; }
         console.log(JSON.stringify({ event: "domain-claimed", business }));
-        await notify(ownerAddress, `Finish connecting ${domain} to Mac Tidar Mail`, [`To finish connecting ${domain}, add these records where you manage its DNS (your domain registrar or DNS host):`, ``,
-          ...recordLines(claimRecords(claim)), ``, `"@" means ${domain} itself. We check every 15 minutes and email you here once it's verified. You have until ${pendingExpiry(now).toUTCString()}.`, ``,
-          `${openYourself}, then go to ${setupPage} to copy the records or choose Verify now.`]);
+        await notify(ownerAddress, `Finish connecting ${domain} to Mac Tidar Mail`, {
+          preview: `Add these DNS records to finish connecting ${domain}.`, title: `Finish connecting ${domain}`,
+          body: [`Add these records where you manage the DNS for **${domain}** (your domain registrar or DNS host). Keep any records you already have.`],
+          records: emailRecords(claimRecords(claim)),
+          after: [`"@" means ${domain} itself; some providers want that box left empty. SPF and DMARC are recommended; if ${domain} already has a record starting \`v=spf1\`, add \`include:amazonses.com\` to it instead of adding a second one.`,
+            `We check every 15 minutes and email you here as soon as it's verified. You have until **${until(pendingExpiry(now).toISOString())}**.`,
+            `${openYourself}, then go to ${setupPage} to copy the records or choose Verify now.`],
+        }, { name: displayName });
         return json(201, await publicClaim(claim));
       }
 

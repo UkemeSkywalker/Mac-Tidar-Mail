@@ -6,6 +6,7 @@ import { mockClient } from "aws-sdk-client-mock";
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from "aws-lambda";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createHandler } from "../../src/api/handler";
+import { sentEmail } from "../helpers";
 import { checkDns, dkimTarget, dnsRecords, evaluate, NO_CHECKS, parseDisplayName, parseDomain, type DomainItem, type Resolver } from "../../src/shared/domains";
 
 const OWN = ["mactidar.com", "beta.mactidar.com"];
@@ -125,8 +126,11 @@ describe("connecting a domain", () => {
     expect(ses.commandCalls(CreateEmailIdentityCommand)[0]!.args[0].input).toMatchObject({ EmailIdentity: "zetca.pro", ConfigurationSetName: "mactidar-mail" });
     const mail = ses.commandCalls(SendEmailCommand)[0]!.args[0].input;
     expect(mail.Destination?.ToAddresses).toEqual(["ada.backup@gmail.com"]);
-    expect(mail.Content?.Simple?.Body?.Text?.Data).toContain("_mactidar");
-    expect(mail.Content?.Simple?.Body?.Text?.Data).not.toMatch(/https?:\/\//);
+    const m = await sentEmail(mail);
+    expect(m.text).toContain("_mactidar");
+    expect(m.html).toContain("mactidar-verify=");
+    expect(m.text).not.toMatch(/https?:\/\//);
+    expect(m.html).not.toMatch(/href=/);
   });
   it("lets a second person claim a pending domain, reusing the SES identity", async () => {
     ddb.on(QueryCommand).callsFake(i => i.IndexName ? { Count: 0 } : { Items: [{ type: "claim", ownerSub: "sub-b" }] });
@@ -186,7 +190,9 @@ describe("daily check", () => {
     expect(ddb.commandCalls(PutCommand)[0]!.args[0].input.Item).toMatchObject({ domain: "zetca.pro", status: "suspended", suspendedFor: "dns" });
     const mail = ses.commandCalls(SendEmailCommand)[0]!.args[0].input;
     expect(mail.Destination?.ToAddresses).toEqual(["ada.backup@gmail.com"]);
-    expect(mail.Content?.Simple?.Body?.Text?.Data).not.toMatch(/https?:\/\//);
+    const m = await sentEmail(mail);
+    expect(m.text).not.toMatch(/https?:\/\//);
+    expect(m.html).not.toMatch(/href=/);
   });
 });
 
