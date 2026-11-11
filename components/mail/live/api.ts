@@ -58,6 +58,13 @@ export interface DomainView {
 /** Someone with an address on a customer domain, as its owner sees them. */
 export interface PersonView { address: string; givenName: string; familyName: string; backupEmail: string; status: "invited" | "active"; createdAt: string; activatedAt: string | null; owner?: boolean }
 
+/** A verified company domain's name and logo, for the sign-in screen (no sign-in needed). */
+export async function publicBrand(domain: string): Promise<(Brand & { domain: string }) | null> {
+  const res = await fetch(`${liveConfig.apiUrl}/v1/brand?domain=${encodeURIComponent(domain)}`).catch(() => null);
+  if (!res?.ok) return null;
+  return res.json().catch(() => null);
+}
+
 export const mailApi = {
   mailboxes: () => call<{ mailboxes: ServerMailbox[] }>("GET", "/v1/mailboxes").then(r => r.mailboxes),
   /** Opens the mailbox for the signed-in account's own address (its username). */

@@ -229,3 +229,34 @@ describe("Business sign-up check (pre-sign-up trigger)", () => {
     await expect(auth()(pre("ceo@zetca.pro"))).rejects.toThrow("Too many");
   });
 });
+
+describe("public brand lookup (sign-in screen)", () => {
+  const d: DomainItem = { pk: "DOMAIN#zetca.pro", sk: "META", type: "domain", domain: "zetca.pro", ownerSub: "sub-ceo", ownerAddress: "ceo@zetca.pro", displayName: "Zetca", status: "active",
+    dkimTokens: TOKENS, checks: { dkim: true, mx: true, spf: true, dmarc: true }, createdAt: "x", logoKey: "logos/zetca.pro/0123456789abcdef01234567.png", gsi1pk: "DOMAINS#sub-ceo", gsi1sk: "zetca.pro", gsi2pk: "DOMAINS", gsi2sk: "zetca.pro" };
+  const lookup = async (domain: string) => {
+    const r = await api()({ routeKey: "GET /v1/brand", queryStringParameters: { domain }, requestContext: {} } as unknown as APIGatewayProxyEventV2WithJWTAuthorizer);
+    return { status: r.statusCode!, body: JSON.parse(r.body as string) };
+  };
+  it("answers without sign-in for verified domains only, with nothing private", async () => {
+    table({ "DOMAIN#zetca.pro|META": d });
+    expect(await lookup("Zetca.pro")).toEqual({ status: 200, body: { domain: "zetca.pro", name: "Zetca", logoUrl: "https://cdn.example/logos/zetca.pro/0123456789abcdef01234567.png" } });
+    table({ "DOMAIN#zetca.pro|META": { ...d, status: "pending" } });
+    expect((await lookup("zetca.pro")).status).toBe(404);
+    table({});
+    expect((await lookup("nobody.com")).status).toBe(404);
+    expect((await lookup("not a domain")).status).toBe(404);
+  });
+});
+
+describe("invite email", () => {
+  it("shows the company's logo from our CDN, and nothing else", async () => {
+    const d = { domain: "zetca.pro", displayName: "Zetca & Co", status: "active", logoKey: "logos/zetca.pro/0123456789abcdef01234567.png" };
+    const auth = (brandUrl?: string) => createAuth({ ddb: DynamoDBDocumentClient.from(new DynamoDBClient({})), cognito: new CognitoIdentityProviderClient({}), config: { table: "t", signupDomain: "mactidar.com", localDomains: ["mactidar.com"], brandUrl } });
+    const ev = () => ({ triggerSource: "CustomMessage_AdminCreateUser", userName: "ana@zetca.pro", request: { codeParameter: "{####}", usernameParameter: "{username}" }, response: {} }) as never;
+    table({ "DOMAIN#zetca.pro|META": d });
+    const out = await auth("https://cdn.example")(ev()) as { response: { emailMessage: string } };
+    expect(out.response.emailMessage).toMatch(/^<img src="https:\/\/cdn\.example\/logos\/zetca\.pro\/0123456789abcdef01234567\.png" alt="Zetca &amp; Co"/);
+    table({ "DOMAIN#zetca.pro|META": { ...d, logoKey: "logos/zetca.pro/x.svg\" onerror=\"alert(1)" } });
+    expect(((await auth("https://cdn.example")(ev())) as { response: { emailMessage: string } }).response.emailMessage).not.toContain("<img");
+  });
+});

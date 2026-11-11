@@ -50,6 +50,7 @@ module "users" {
   data_key_arn      = module.kms.data_key_arn
   alerts_topic_arn  = module.monitoring.alerts_topic_arn
   lambda_source_dir = "${path.root}/../services/mail/dist/auth"
+  brand_url         = module.brand.url
 }
 
 module "monitoring" {

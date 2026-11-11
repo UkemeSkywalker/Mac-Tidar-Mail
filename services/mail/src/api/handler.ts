@@ -976,7 +976,21 @@ export function createHandler({ ddb, s3, ses, config, account, users, dns = node
     return s;
   }
 
+  /**
+   * Public: a verified company domain's name and logo, so the sign-in screen can show it as
+   * someone types their address. Only for verified domains (whose MX already points at us),
+   * and the same 404 for "not a customer" and "not verified", so it reveals nothing more.
+   */
+  async function publicBrand(event: Event): Promise<Result> {
+    let domain: string;
+    try { domain = parseDomain(event.queryStringParameters?.domain ?? "", config.localDomains); } catch { return json(404, { error: "Not found" }); }
+    const d = await directory.lookup(domain);
+    if (!d || d.status === "pending") return json(404, { error: "Not found" });
+    return { ...json(200, { domain: d.domain, name: d.displayName, logoUrl: logoUrl(d.logoKey) }), headers: { "content-type": "application/json", "cache-control": "public, max-age=300" } };
+  }
+
   const api = async (event: Event): Promise<Result> => {
+    if (event.routeKey === "GET /v1/brand") return publicBrand(event).catch(() => json(500, { error: "Something went wrong" }));
     const sub = event.requestContext.authorizer?.jwt?.claims?.sub;
     if (typeof sub !== "string" || !sub) return json(401, { error: "Unauthorized" });
     try {

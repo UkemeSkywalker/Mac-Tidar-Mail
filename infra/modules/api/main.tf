@@ -249,6 +249,14 @@ resource "aws_apigatewayv2_route" "routes" {
   authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
 }
 
+# Public: a verified company domain's name and logo for the sign-in screen. No sign-in needed.
+resource "aws_apigatewayv2_route" "public_brand" {
+  api_id             = aws_apigatewayv2_api.mail.id
+  route_key          = "GET /v1/brand"
+  target             = "integrations/${aws_apigatewayv2_integration.api.id}"
+  authorization_type = "NONE"
+}
+
 resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.mail.id
   name        = "$default"
@@ -257,6 +265,13 @@ resource "aws_apigatewayv2_stage" "default" {
   default_route_settings {
     throttling_burst_limit = 40
     throttling_rate_limit  = 20
+  }
+
+  # Looked up as people type on the sign-in screen; nobody needs more than this.
+  route_settings {
+    route_key              = "GET /v1/brand"
+    throttling_burst_limit = 10
+    throttling_rate_limit  = 5
   }
 
   # Opening a new mailbox gets a much lower limit than the rest of the API.
@@ -274,7 +289,7 @@ resource "aws_apigatewayv2_stage" "default" {
     })
   }
   # Route-level throttles need the routes to exist first.
-  depends_on = [aws_apigatewayv2_route.routes]
+  depends_on = [aws_apigatewayv2_route.routes, aws_apigatewayv2_route.public_brand]
 }
 
 resource "aws_lambda_permission" "apigw" {

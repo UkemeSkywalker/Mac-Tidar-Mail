@@ -14,7 +14,7 @@ import { parseAddress, parseLocalPart, reservationKey, validateBusinessProfile, 
 import { mailboxPk, META_SK } from "../shared/table";
 import { CLAIM_PREFIX, domainKey, MAX_CLAIMS_PER_DOMAIN, parseDomain, PENDING_DOMAIN_DAYS, personKey, signupKey, type DomainItem, type SignupItem } from "../shared/domains";
 
-export interface AuthConfig { table: string; signupDomain: string; localDomains: string[] }
+export interface AuthConfig { table: string; signupDomain: string; localDomains: string[]; /** Where published company logos are served (CloudFront). */ brandUrl?: string }
 export interface AuthDeps { ddb: DynamoDBDocumentClient; cognito: CognitoIdentityProviderClient; config: AuthConfig; now?: () => Date }
 
 // The pool ID comes in the scheduled event: the pool names this function, so the function
@@ -95,10 +95,14 @@ export function createHandler({ ddb, cognito, config, now = () => new Date() }: 
     const domain = event.userName.split("@")[1] ?? "";
     const { Item } = await ddb.send(new GetCommand({ TableName: config.table, Key: domainKey(domain) }));
     // The message is sent as HTML: escape the owner-chosen name (validation already refuses < and >).
-    const name = ((Item as DomainItem | undefined)?.displayName ?? domain).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const d = Item as DomainItem | undefined;
+    const name = (d?.displayName ?? domain).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    // The company's logo, from our own CDN; its key is one we generated (logos/<domain>/<hex>.<ext>).
+    const logo = config.brandUrl && d?.logoKey && /^logos\/[a-z0-9.-]+\/[0-9a-f]{24}\.(png|jpg|webp)$/.test(d.logoKey)
+      ? `<img src="${config.brandUrl}/${d.logoKey}" alt="${name}" width="56" height="56" style="width:56px;height:56px;object-fit:contain;border-radius:10px"><br><br>` : "";
     const { codeParameter, usernameParameter } = event.request;
     event.response.emailSubject = `You’ve been added to ${(Item as DomainItem | undefined)?.displayName ?? domain}’s email`;
-    event.response.emailMessage = [
+    event.response.emailMessage = logo + [
       `Hello,`, ``,
       `${name} has given you an email address on Mac Tidar Mail:`, ``,
       `Your address: ${usernameParameter}`,
@@ -154,6 +158,7 @@ export const handler = (event: PreSignUpTriggerEvent | CustomMessageTriggerEvent
       table: env("MAIL_TABLE"),
       signupDomain: env("SIGNUP_DOMAIN").trim().toLowerCase(),
       localDomains: env("LOCAL_MAIL_DOMAINS").split(",").map(d => d.trim().toLowerCase()),
+      brandUrl: process.env.BRAND_URL?.replace(/\/$/, "") || undefined,
     },
   });
   return cached(event);
