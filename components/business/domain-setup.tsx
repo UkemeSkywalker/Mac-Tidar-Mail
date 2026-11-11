@@ -166,6 +166,8 @@ export function DomainSetup({ d, onChange, onRemoved }: { d: DomainView; onChang
         )}
       </Section>
 
+      {d.web && <WebAddress d={d} onChange={onChange} />}
+
       <Section title="Team" icon="group">
         {d.status === "pending"
           ? <p className="t-body-sm text-m-muted flex items-center gap-2"><Icon name="lock" className="text-[16px]" />Unlocks once {d.domain} is verified. Then you can create addresses for your team.</p>
@@ -178,6 +180,42 @@ export function DomainSetup({ d, onChange, onRemoved }: { d: DomainView; onChang
           : !d.ownAddress && <Btn tone="danger" disabled={!!busy} onClick={() => { if (confirm(`Disconnect ${d.domain} from Mac Tidar Mail?`)) void act("remove", async () => { await mailApi.removeDomain(d.domain); onRemoved(); }); }}>Disconnect domain</Btn>}
       </div>
     </article>
+  );
+}
+
+// mail.<domain>: Mac Tidar Mail on the company's own web address. One CNAME; CloudFront issues
+// and renews the HTTPS certificate itself once it points at us.
+function WebAddress({ d, onChange }: { d: DomainView; onChange: (d: DomainView) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const w = d.web!;
+  const act = async (fn: () => Promise<void>) => { if (busy) return; setBusy(true); setError(""); try { await fn(); } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); } };
+  const certReady = w.certificate === "issued";
+  const steps: [boolean, string][] = [[w.dns, `CNAME added: mail → ${w.record.value}`], [certReady, "Secure (HTTPS) certificate issued"], [w.status === "active", `${w.host} is live`]];
+  return (
+    <Section title="Web address" icon="language" aside={w.status === "active" ? <span className="px-2.5 py-1 rounded-m-pill t-label-sm font-semibold bg-m-success/15 text-m-success">Live</span> : undefined}>
+      {!w.enabled ? <>
+        <p className="t-body-sm text-m-muted">Let your team open their mail at <b className="text-m-text">{w.host}</b>, with your logo from the first screen. It takes one more DNS record; mail.mactidar.com keeps working too.</p>
+        <Btn tone="brand" disabled={busy} onClick={() => void act(async () => onChange(await mailApi.enableWeb(d.domain)))}>{busy ? "Setting up…" : `Set up ${w.host}`}</Btn>
+      </> : <>
+        {w.status === "active"
+          ? <p className="t-body-sm text-m-text">Your team can sign in at <b>{w.host}</b>.</p>
+          : <p className="t-body-sm text-m-muted">Add this record where you manage DNS for {d.domain}. Once it’s in place, the secure certificate is issued automatically, usually within 30 minutes. If <span className="t-code">mail.{d.domain}</span> already has a record, replace it.</p>}
+        <div className="overflow-x-auto"><table className="w-full t-body-sm"><tbody><tr className="border-y border-m-line align-top">
+          <td className="py-2 pr-2"><span className="t-code text-m-muted">CNAME</span></td>
+          <td className="py-2 pr-2"><CopyText text={w.record.host} /></td>
+          <td className="py-2 pr-2"><CopyText text={w.record.value} /></td>
+          <td className="py-2"><Icon name={w.dns ? "check_circle" : "radio_button_unchecked"} className={`text-[18px] ${w.dns ? "text-m-success" : "text-m-muted"}`} /></td>
+        </tr></tbody></table></div>
+        <ul className="space-y-1">{steps.map(([ok, text]) => <li key={text} className="flex items-center gap-2 t-body-sm text-m-text"><Icon name={ok ? "check_circle" : "radio_button_unchecked"} className={`text-[16px] ${ok ? "text-m-success" : "text-m-muted"}`} />{text}</li>)}</ul>
+        <div className="flex flex-wrap gap-2">
+          {w.status === "active" && <a href={`https://${w.host}/app/`} className="px-3 py-2 rounded-m-lg t-headline-sm bg-m-low text-m-text hover:bg-m-mid">Open {w.host}</a>}
+          <Btn tone="danger" disabled={busy} onClick={() => { if (confirm(`Turn off ${w.host}? Your team can still sign in at mail.mactidar.com.`)) void act(async () => onChange(await mailApi.disableWeb(d.domain))); }}>Turn off</Btn>
+        </div>
+        <p className="t-label-sm text-m-muted">Use Verify now above to re-check.</p>
+      </>}
+      {error && <p className="t-body-sm text-m-error" role="alert">{error}</p>}
+    </Section>
   );
 }
 

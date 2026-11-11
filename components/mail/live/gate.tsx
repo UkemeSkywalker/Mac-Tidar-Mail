@@ -13,6 +13,7 @@ import { BrandMark } from "../../brand";
 import { Icon } from "../ui";
 import { ApiError, mailApi, publicBrand, type Brand, type ServerMailbox } from "./api";
 import { COUNTRIES } from "./countries";
+import { companyDomainFromHost } from "./host";
 import { configureAuth, confirmResetPassword, confirmSignIn, confirmSignUp, getCurrentUser, keepSignedIn, resendSignUpCode, resetPassword, sessionRef, setKeepSignedIn, signIn, signOut, signUp } from "./auth";
 
 export interface LiveSession {
@@ -89,7 +90,7 @@ const BACKUP_PROVIDERS = /@(?:gmail|googlemail|outlook|hotmail|live|yahoo|icloud
 /** A bare name means @mactidar.com; a full address can be on any domain connected to Mac Tidar Mail. */
 function toUsername(input: string): string {
   const v = input.trim().toLowerCase();
-  if (!v.includes("@")) return `${v}@${MAIL_DOMAIN}`;
+  if (!v.includes("@")) return `${v}@${companyDomainFromHost() ?? MAIL_DOMAIN}`;
   if (BACKUP_PROVIDERS.test(v)) throw new Error("Sign in with your Mac Tidar Mail address. Your backup email is only for password resets.");
   return v;
 }
@@ -159,14 +160,27 @@ function PasswordField({ label, hint, ...props }: { label: string; hint?: string
   );
 }
 
-/** The @mactidar.com address (sign-in name); "ada" and "ada@mactidar.com" both work. */
+/**
+ * The sign-in address; "ada" and "ada@mactidar.com" both work. On a company's own mail.<domain>,
+ * the domain is filled in: people type just their name.
+ */
 function AddressField({ value, onChange, autoComplete }: { value: string; onChange: (v: string) => void; autoComplete: string }) {
+  const company = companyDomainFromHost();
+  const input = "px-3 py-2.5 bg-m-low text-m-text t-body-md focus:outline-none";
   return (
     <label className="block">
-      <span className="t-label-md text-m-muted">Mac Tidar Mail address</span>
-      <input name="address" type="text" inputMode="email" required value={value} onChange={e => onChange(e.target.value)} autoComplete={autoComplete}
-        autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder={`you@${MAIL_DOMAIN}`}
-        className="mt-1 w-full px-3 py-2.5 rounded-m-lg bg-m-low text-m-text t-body-md border border-m-line focus:outline-none focus:ring-2 focus:ring-m-brand/30" />
+      <span className="t-label-md text-m-muted">{company ? "Your address" : "Mac Tidar Mail address"}</span>
+      {company && !value.includes("@") ? (
+        <span className="mt-1 flex items-stretch rounded-m-lg border border-m-line bg-m-low focus-within:ring-2 focus-within:ring-m-brand/30 overflow-hidden">
+          <input name="address" type="text" inputMode="email" required value={value} onChange={e => onChange(e.target.value)} autoComplete={autoComplete}
+            autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="you" className={`flex-1 min-w-0 ${input}`} />
+          <span className="px-3 flex items-center t-body-md text-m-muted bg-m-mid">@{company}</span>
+        </span>
+      ) : (
+        <input name="address" type="text" inputMode="email" required value={value} onChange={e => onChange(e.target.value)} autoComplete={autoComplete}
+          autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder={`you@${company ?? MAIL_DOMAIN}`}
+          className={`mt-1 w-full rounded-m-lg border border-m-line focus:ring-2 focus:ring-m-brand/30 ${input}`} />
+      )}
     </label>
   );
 }
@@ -183,7 +197,9 @@ export function LiveGate({ children }: { children: ReactNode }) {
   /** The address typed on the sign-in and reset forms. */
   const [address, setAddress] = useState("");
   /** The company behind the address being typed, when it's on a verified customer domain. */
-  const typedDomain = address.trim().toLowerCase().split("@")[1] ?? "";
+  // On mail.<company> the company is known before anything is typed.
+  const company = companyDomainFromHost();
+  const typedDomain = address.includes("@") ? address.trim().toLowerCase().split("@")[1] ?? "" : company ?? "";
   const brandable = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(typedDomain) && !/(^|\.)mactidar\.com$/.test(typedDomain) && !BACKUP_PROVIDERS.test(`@${typedDomain}`);
   const [fetchedBrand, setFetchedBrand] = useState<{ domain: string; brand: Brand | null } | null>(null);
   useEffect(() => {
@@ -320,7 +336,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     configureAuth();
     dev.current = device();
-    const signup = new URLSearchParams(location.search).get("mode") === "signup";
+    const signup = new URLSearchParams(location.search).get("mode") === "signup" && !companyDomainFromHost();
     (async () => {
       try { await getCurrentUser(); } catch { return setStage({ s: signup ? "signup" : "signin" }); }
       await afterSignIn();
@@ -410,7 +426,7 @@ export function LiveGate({ children }: { children: ReactNode }) {
     case "working":
       return wrap(<div className="min-h-dvh grid place-items-center bg-m-canvas text-m-muted"><div className="flex items-center gap-3 t-body-md"><span className="w-4 h-4 rounded-full border-2 border-m-brand border-t-transparent animate-spin" />{stage.label}</div></div>);
     case "signin":
-      return wrap(<Shell brand={signinBrand} title="Sign in" subtitle={signinBrand ? `Use your @${address.trim().toLowerCase().split("@")[1]} address.` : "Use your @mactidar.com address, or your address on your company’s domain."}>
+      return wrap(<Shell brand={signinBrand} title="Sign in" subtitle={signinBrand ? `Use your @${typedDomain} address.` : "Use your @mactidar.com address, or your address on your company’s domain."}>
         <form className="space-y-4" onSubmit={e => { const f = form(e); setKeepSignedIn(f.get("keep") === "on"); run(() => doSignIn(field(f, "password")), error => ({ s: "signin", error })); }}>
           <AddressField value={address} onChange={setAddress} autoComplete="username" />
           <PasswordField label="Password" name="password" autoComplete="current-password" required />
@@ -421,8 +437,10 @@ export function LiveGate({ children }: { children: ReactNode }) {
           <ErrorLine text={stage.error} />
           <Primary type="submit">Sign in</Primary>
         </form>
-        <div className="flex justify-between"><Link onClick={() => setStage({ s: "forgot" })}>Forgot password?</Link><NextLink href="/" className="t-label-md text-m-muted hover:underline">Back to home</NextLink></div>
-        <p className="t-body-sm text-m-muted text-center pt-2 border-t border-m-line">New to Mac Tidar Mail? <Link onClick={() => setStage({ s: "signup" })}>Create an account</Link></p>
+        <div className="flex justify-between"><Link onClick={() => setStage({ s: "forgot" })}>Forgot password?</Link>{!company && <NextLink href="/" className="t-label-md text-m-muted hover:underline">Back to home</NextLink>}</div>
+        {company
+          ? <p className="t-body-sm text-m-muted text-center pt-2 border-t border-m-line">No address yet? Ask whoever manages email at {signinBrand?.name ?? company}.</p>
+          : <p className="t-body-sm text-m-muted text-center pt-2 border-t border-m-line">New to Mac Tidar Mail? <Link onClick={() => setStage({ s: "signup" })}>Create an account</Link></p>}
       </Shell>);
     case "signup": {
       const country = COUNTRIES.find(c => c.code === draft.country);

@@ -54,6 +54,9 @@ export interface DomainView {
   logoUrl: string | null;
   /** The owner's own sign-in address when it's on this domain (a Business account). */
   ownAddress: string | null;
+  /** mail.<domain>: Mac Tidar Mail on the company's own web address (null until the domain is verified). */
+  web: { host: string; enabled: boolean; status: "pending" | "active" | null; dns: boolean; certificate: string | null;
+    record: { purpose: string; type: string; name: string; host: string; value: string } } | null;
 }
 
 /** Someone with an address on a customer domain, as its owner sees them. */
@@ -90,6 +93,8 @@ export const mailApi = {
     return call<DomainView>("PUT", `/v1/domains/${encodeURIComponent(domain)}/logo`, { key: form.key });
   },
   removeLogo: (domain: string) => call<DomainView>("DELETE", `/v1/domains/${encodeURIComponent(domain)}/logo`),
+  enableWeb: (domain: string) => call<DomainView>("POST", `/v1/domains/${encodeURIComponent(domain)}/web`),
+  disableWeb: (domain: string) => call<DomainView>("DELETE", `/v1/domains/${encodeURIComponent(domain)}/web`),
   connectDomain: (domain: string, displayName: string) => call<DomainView>("POST", "/v1/domains", { domain, displayName }),
   checkDomain: (domain: string) => call<DomainView>("POST", `/v1/domains/${encodeURIComponent(domain)}/check`),
   removeDomain: (domain: string) => call<{ deleted: boolean }>("DELETE", `/v1/domains/${encodeURIComponent(domain)}`),

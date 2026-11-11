@@ -106,6 +106,15 @@ module "api" {
   brand_bucket_name     = module.brand.bucket_name
   brand_bucket_arn      = module.brand.bucket_arn
   brand_url             = module.brand.url
+  web_distribution_id   = module.customer_web.distribution_id
+  web_distribution_arn  = module.customer_web.distribution_arn
+  web_connection_group  = module.customer_web.connection_group_id
+  web_routing_endpoint  = module.customer_web.routing_endpoint
+}
+
+module "customer_web" {
+  source          = "./modules/customer-web"
+  app_origin_host = "mail.${var.root_domain}" # the same site; avoids depending on the hosting module
 }
 
 module "hosting" {

@@ -46,6 +46,8 @@ export interface DomainItem {
   suspendedFor?: "dns" | "abuse";
   /** The company logo in the brand bucket (`logos/…`), shown to everyone on the domain. */
   logoKey?: string;
+  /** mail.<domain>: Mac Tidar Mail on the company's own web address, once its owner sets it up. */
+  webHost?: import("./webhost").WebHost;
   gsi1pk: string; gsi1sk: string;
   /** Every domain shares one gsi2 partition so the daily check can list them all. */
   gsi2pk: typeof ALL_DOMAINS; gsi2sk: string;

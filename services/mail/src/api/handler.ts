@@ -13,6 +13,8 @@ import { authoritativeResolver, DnsUnavailable } from "../shared/dns";
 import { renderEmail, type EmailContent, type EmailRecord } from "../shared/email";
 import { MAC_TIDAR_MARK_PNG } from "../shared/assets/mark";
 import MailComposer from "nodemailer/lib/mail-composer";
+import { CloudFrontClient } from "@aws-sdk/client-cloudfront";
+import { cloudFrontWebHosts, webHostName, type WebHost, type WebHosts } from "../shared/webhost";
 import { randomBytes } from "node:crypto";
 import { AdminCreateUserCommand, AdminDeleteUserCommand, AdminGetUserCommand, CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-provider";
 import { draftSk, folderGsi1, mailboxPk, META_SK, ownerGsi1, SETTINGS_SK, type DraftItem, type Folder, type MailboxMeta, type MessageItem, type SettingsItem } from "../shared/table";
@@ -55,6 +57,8 @@ export interface ApiDeps {
   dns?: Resolver;
   /** Accounts for people on customer domains. */
   users?: UserAdmin;
+  /** Companies' own web addresses (mail.<domain>) on CloudFront. Absent: the feature is off. */
+  webHosts?: WebHosts;
   presign?: (s3: S3Client, cmd: GetObjectCommand) => Promise<string>;
   /** A browser upload form for one logo (S3 presigned POST). */
   presignPost?: (s3: S3Client, p: { bucket: string; key: string; contentType: string }) => Promise<{ url: string; fields: Record<string, string> }>;
@@ -99,7 +103,7 @@ function parseBody(event: Event, maxChars = 600_000): unknown {
   catch { throw new BadRequest("Body must be JSON"); }
 }
 
-export function createHandler({ ddb, s3, ses, config, account, users, dns, presign = (c, cmd) => getSignedUrl(c, cmd, { expiresIn: 300 }),
+export function createHandler({ ddb, s3, ses, config, account, users, webHosts, dns, presign = (c, cmd) => getSignedUrl(c, cmd, { expiresIn: 300 }),
   presignPost = (c, p) => createPresignedPost(c, { Bucket: p.bucket, Key: p.key, Expires: 300, Fields: { "Content-Type": p.contentType },
     Conditions: [["content-length-range", 1, MAX_LOGO_BYTES], ["eq", "$Content-Type", p.contentType]] }) }: ApiDeps) {
   const T = config.table;
@@ -358,6 +362,34 @@ export function createHandler({ ddb, s3, ses, config, account, users, dns, presi
   }
 
   /** Daily: release domains never verified, and re-check the rest (DNS can change at any time). */
+  /** Re-checks a company's mail.<domain>: its CNAME (on the domain's own nameservers) and CloudFront's side. */
+  async function refreshWebHost(d: DomainItem): Promise<DomainItem> {
+    if (!d.webHost || !webHosts) return d;
+    const want = webHosts.routingEndpoint.toLowerCase();
+    const r = await resolverFor(d.domain);
+    const cnames = await (r.resolveCname?.(d.webHost.host) ?? Promise.resolve([])).catch(e => { if (e instanceof DnsUnavailable) throw e; return [] as string[]; });
+    const dns = cnames.some(c => c.toLowerCase().replace(/\.$/, "") === want);
+    const cf = await webHosts.status(d.webHost.tenantId);
+    const webHost: WebHost = { ...d.webHost, dns, certificate: cf.certificate, status: cf.active && cf.certificate === "issued" ? "active" : "pending", checkedAt: new Date().toISOString() };
+    await ddb.send(new UpdateCommand({ TableName: T, Key: domainKey(d.domain), UpdateExpression: "SET webHost = :w", ConditionExpression: "attribute_exists(webHost)", ExpressionAttributeValues: { ":w": webHost } }));
+    if (d.webHost.status !== "active" && webHost.status === "active") {
+      await notify(d.ownerAddress, `${webHost.host} is ready`, {
+        preview: `Your team can now sign in at ${webHost.host}.`, title: `${webHost.host} is ready`,
+        body: [`Mac Tidar Mail now opens at **${webHost.host}**, with your logo from the first screen. Everyone on ${d.domain} can sign in there; mail.mactidar.com keeps working too.`],
+        facts: [["Web address", webHost.host]],
+      }, brandOf(d));
+    }
+    return { ...d, webHost };
+  }
+
+  /** Stops serving a company's mail.<domain>; the CloudFront tenant is deleted later, once that's deployed. */
+  async function retireWebHost(d: DomainItem) {
+    if (!d.webHost || !webHosts) return;
+    await webHosts.disable(d.webHost.tenantId);
+    const purge = { pk: `TENANTPURGE#${d.webHost.tenantId}`, sk: "PURGE", tenantId: d.webHost.tenantId, createdAt: new Date().toISOString(), gsi2pk: "TENANTPURGES", gsi2sk: d.webHost.tenantId };
+    await ddb.send(new PutCommand({ TableName: T, Item: purge }));
+  }
+
   async function checkAllDomains() {
     let start: Record<string, unknown> | undefined;
     const counts = { checked: 0, released: 0, suspended: 0, restored: 0, failed: 0 };
@@ -371,7 +403,9 @@ export function createHandler({ ddb, s3, ses, config, account, users, dns, presi
             counts.released++;
             continue;
           }
-          const next = await refreshDomain(d);
+          const refreshed = await refreshDomain(d);
+          // The web address is a side feature: its check failing must not stop the domain's own.
+          const next = await refreshWebHost(refreshed).catch(e => { console.error(JSON.stringify({ event: "web-host-check-failed", name: (e as Error).name })); return refreshed; });
           counts.checked++;
           if (d.status === "active" && next.status === "suspended") {
             counts.suspended++;
@@ -394,6 +428,16 @@ export function createHandler({ ddb, s3, ses, config, account, users, dns, presi
       for (const x of (page.Items ?? []) as PurgeItem[]) {
         try { await purgeMailbox(x); purged++; }
         catch (e) { counts.failed++; console.error(JSON.stringify({ event: "purge-failed", name: (e as Error).name })); }
+      }
+      start = page.LastEvaluatedKey;
+    } while (start);
+    // CloudFront tenants for web addresses that were turned off: deleted once disabling has deployed.
+    start = undefined;
+    do {
+      const page: QueryCommandOutput = await ddb.send(new QueryCommand({ TableName: T, IndexName: "gsi2", KeyConditionExpression: "gsi2pk = :p", ExpressionAttributeValues: { ":p": "TENANTPURGES" }, ExclusiveStartKey: start }));
+      for (const x of (page.Items ?? []) as { pk: string; sk: string; tenantId: string }[]) {
+        try { if (webHosts && await webHosts.remove(x.tenantId)) await ddb.send(new DeleteCommand({ TableName: T, Key: { pk: x.pk, sk: x.sk } })); }
+        catch (e) { counts.failed++; console.error(JSON.stringify({ event: "tenant-purge-failed", name: (e as Error).name })); }
       }
       start = page.LastEvaluatedKey;
     } while (start);
@@ -524,6 +568,11 @@ export function createHandler({ ddb, s3, ses, config, account, users, dns, presi
     records: dnsRecords(d.domain, d.dkimTokens, config.region), createdAt: d.createdAt, checkedAt: d.checkedAt ?? null, verifiedAt: d.verifiedAt ?? null,
     expiresAt: d.status === "pending" ? pendingExpiry(d.createdAt).toISOString() : null,
     logoUrl: logoUrl(d.logoKey), ownAddress: ownsAddressOn(d.ownerAddress, d.domain) ? d.ownerAddress : null,
+    // mail.<domain>: offered once the domain is verified, when this deployment has web hosts.
+    web: webHosts && d.status !== "pending" ? {
+      host: d.webHost?.host ?? webHostName(d.domain), enabled: !!d.webHost, status: d.webHost?.status ?? null, dns: d.webHost?.dns ?? false, certificate: d.webHost?.certificate ?? null,
+      record: { purpose: "Web address", type: "CNAME", name: d.webHost?.host ?? webHostName(d.domain), host: "mail", value: webHosts.routingEndpoint },
+    } : null,
   });
   /** A claim looks like a pending domain, plus its own ownership record. Its logo is only previewed (signed URL). */
   const publicClaim = async (c: ClaimItem) => ({
@@ -883,7 +932,7 @@ export function createHandler({ ddb, s3, ses, config, account, users, dns, presi
         // DNS and SES lookups cost money and time; one check every 10 seconds is plenty.
         if (checkedAt && Date.now() - Date.parse(checkedAt) < 10_000) return json(200, await publicEntry(e));
         try {
-          if ("domain" in e) return json(200, publicDomain(await refreshDomain(e.domain)));
+          if ("domain" in e) return json(200, publicDomain(await refreshWebHost(await refreshDomain(e.domain))));
           const r = await refreshClaim(e.claim);
           if ("lost" in r) throw new NotFound();
           return json(200, "domain" in r ? publicDomain(r.domain) : await publicClaim(r.claim));
@@ -1013,12 +1062,43 @@ export function createHandler({ ddb, s3, ses, config, account, users, dns, presi
         return json(200, { deleted: true });
       }
 
+      // ── mail.<domain>: Mac Tidar Mail on the company's own web address ────────────────────
+      case "POST /v1/domains/{domain}/web": {
+        if (!webHosts) throw new NotFound();
+        const e = await ownedEntry(sub, p.domain);
+        if (!("domain" in e) || e.domain.status === "pending") throw new Conflict("Finish connecting this domain first.");
+        const d = e.domain;
+        if (d.webHost) return json(200, publicDomain(d));
+        const host = webHostName(d.domain);
+        const { tenantId } = await webHosts.create(host, d.domain).catch(err => {
+          if ((err as Error).name === "CNAMEAlreadyExists" || (err as Error).name === "EntityAlreadyExists") throw new Conflict(`${host} is already in use on another CloudFront distribution. If it points somewhere else today, remove that first.`);
+          throw err;
+        });
+        const webHost: WebHost = { host, tenantId, status: "pending", dns: false, certificate: null, createdAt: new Date().toISOString() };
+        try { await ddb.send(new UpdateCommand({ TableName: T, Key: domainKey(d.domain), UpdateExpression: "SET webHost = :w", ConditionExpression: "attribute_not_exists(webHost) AND ownerSub = :s", ExpressionAttributeValues: { ":w": webHost, ":s": sub } })); }
+        catch (err) { await webHosts.disable(tenantId).catch(() => {}); throw err; }
+        console.log(JSON.stringify({ event: "web-host-created" }));
+        return json(201, publicDomain({ ...d, webHost }));
+      }
+
+      case "DELETE /v1/domains/{domain}/web": {
+        if (!webHosts) throw new NotFound();
+        const e = await ownedEntry(sub, p.domain);
+        if (!("domain" in e) || !e.domain.webHost) throw new NotFound();
+        await retireWebHost(e.domain);
+        await ddb.send(new UpdateCommand({ TableName: T, Key: domainKey(e.domain.domain), UpdateExpression: "REMOVE webHost", ConditionExpression: "ownerSub = :s", ExpressionAttributeValues: { ":s": sub } }));
+        const rest: DomainItem = { ...e.domain };
+        delete rest.webHost;
+        return json(200, publicDomain(rest));
+      }
+
       case "DELETE /v1/domains/{domain}": {
         const e = await ownedEntry(sub, p.domain);
         if ("claim" in e) { await releaseClaim(e.claim, "cancelled"); return json(200, { deleted: true }); }
         const d = e.domain;
         if (ownsAddressOn(d.ownerAddress, d.domain)) throw new Conflict(`Your own address, ${d.ownerAddress}, is on this domain, so it can't be disconnected from here.`);
         if ((await listPeople(d.domain)).length > 0) throw new Conflict("Remove everyone on this domain first.");
+        await retireWebHost(d);
         await removeDomainIdentity(d.domain);
         await deleteBrandObject(d.logoKey);
         await ddb.send(new DeleteCommand({ TableName: T, Key: domainKey(d.domain), ConditionExpression: "ownerSub = :s", ExpressionAttributeValues: { ":s": sub } }));
@@ -1109,6 +1189,9 @@ export const handler = (event: Event | ScheduledTask) => {
   cached ??= ((cognito: CognitoIdentityProviderClient) => createHandler({
     account: username => poolAccount(cognito, env("MAIL_USER_POOL_ID"), username),
     users: poolUsers(cognito, env("MAIL_USER_POOL_ID")),
+    webHosts: process.env.WEB_DISTRIBUTION_ID ? cloudFrontWebHosts(new CloudFrontClient({ region: "us-east-1" }), {
+      distributionId: env("WEB_DISTRIBUTION_ID"), connectionGroupId: env("WEB_CONNECTION_GROUP_ID"), routingEndpoint: env("WEB_ROUTING_ENDPOINT").replace(/\.$/, ""),
+    }) : undefined,
     ddb: DynamoDBDocumentClient.from(new DynamoDBClient({}), { marshallOptions: { removeUndefinedValues: true } }),
     s3: new S3Client({}),
     ses: new SESv2Client({}),

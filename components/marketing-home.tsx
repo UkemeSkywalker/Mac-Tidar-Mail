@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CSSProperties, ReactNode, useEffect, useState } from "react";
 import { saveSkin, useSkin, type SkinKey } from "./skin-store";
+import { companyDomainFromHost } from "./mail/live/host";
 import { hasStoredSignIn, liveEnabled } from "./mail/live/config";
 import { BrandMark } from "./brand";
 
@@ -81,9 +82,10 @@ function Check({ tone = "forest" }: { tone?: "forest" | "mint" }) {
 function SkinPicker({ skinKey }: { skinKey: SkinKey }) {
   const [open, setOpen] = useState(false);
   const current = skins[skinKey] || skins.forest;
-  // Like Gmail: someone already signed in goes straight to their inbox.
+  // Like Gmail: someone already signed in goes straight to their inbox. On a company's own
+  // mail.<domain>, there's no homepage: it's their mail.
   useEffect(() => {
-    if (liveEnabled && hasStoredSignIn()) location.replace(APP_URL);
+    if (liveEnabled && (hasStoredSignIn() || companyDomainFromHost())) location.replace(APP_URL);
   }, []);
 
   useEffect(() => {
