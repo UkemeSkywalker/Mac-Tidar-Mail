@@ -24,8 +24,12 @@ export interface WebHosts {
   /** Where the company's `mail` CNAME must point. */
   routingEndpoint: string;
   create(host: string, domain: string): Promise<{ tenantId: string }>;
-  /** Whether CloudFront serves the host yet, and the certificate's state. */
-  status(tenantId: string): Promise<{ active: boolean; certificate: string | null }>;
+  /**
+   * Whether CloudFront serves the host yet, and the certificate's state. Once the managed
+   * certificate is issued it must be attached to the tenant (CloudFront doesn't do that itself);
+   * this does it, and the host goes active once CloudFront has deployed that.
+   */
+  status(tenantId: string): Promise<{ active: boolean; certificate: string | null; attached: boolean }>;
   /** Stops serving the host. A disabled tenant can be deleted once CloudFront has deployed that. */
   disable(tenantId: string): Promise<void>;
   /** Deletes a disabled tenant; false while CloudFront is still deploying the change. */
@@ -51,8 +55,17 @@ export function cloudFrontWebHosts(cf: CloudFrontClient, p: { distributionId: st
         cf.send(new GetDistributionTenantCommand({ Identifier: tenantId })),
         cf.send(new GetManagedCertificateDetailsCommand({ Identifier: tenantId })).catch(() => null),
       ]);
-      const active = (t.DistributionTenant?.Domains ?? []).some(d => d.Status === "active");
-      return { active, certificate: cert?.ManagedCertificateDetails?.CertificateStatus ?? null };
+      const d = t.DistributionTenant!;
+      const active = (d.Domains ?? []).some(x => x.Status === "active");
+      const certificate = cert?.ManagedCertificateDetails?.CertificateStatus ?? null, arn = cert?.ManagedCertificateDetails?.CertificateArn;
+      let attached = !!arn && d.Customizations?.Certificate?.Arn === arn;
+      if (certificate === "issued" && arn && !attached) {
+        // The last step of the setup: use the issued certificate for the tenant's domain.
+        await cf.send(new UpdateDistributionTenantCommand({ Id: tenantId, IfMatch: t.ETag, DistributionId: d.DistributionId, ConnectionGroupId: d.ConnectionGroupId, Enabled: d.Enabled,
+          Domains: d.Domains?.map(x => ({ Domain: x.Domain! })), Customizations: { ...d.Customizations, Certificate: { Arn: arn } } }));
+        attached = true;
+      }
+      return { active, certificate, attached };
     },
     async disable(tenantId) {
       const t = await cf.send(new GetDistributionTenantCommand({ Identifier: tenantId }));

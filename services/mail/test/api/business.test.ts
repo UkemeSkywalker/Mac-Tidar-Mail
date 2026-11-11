@@ -268,7 +268,7 @@ describe("invite email", () => {
 describe("company web address (mail.<domain>)", () => {
   const d: DomainItem = { pk: "DOMAIN#zetca.pro", sk: "META", type: "domain", domain: "zetca.pro", ownerSub: "sub-ceo", ownerAddress: "ceo@zetca.pro", displayName: "Zetca", status: "active",
     dkimTokens: TOKENS, checks: { dkim: true, mx: true, spf: true, dmarc: true }, createdAt: "x", gsi1pk: "DOMAINS#sub-ceo", gsi1sk: "zetca.pro", gsi2pk: "DOMAINS", gsi2sk: "zetca.pro" };
-  let created: string[], disabled: string[], status = { active: false, certificate: "pending-validation" as string | null };
+  let created: string[], disabled: string[], status = { active: false, certificate: "pending-validation" as string | null, attached: false };
   const webHosts: WebHosts = {
     routingEndpoint: "d111.cloudfront.net",
     create: async host => { created.push(host); return { tenantId: "dt-1" }; },
@@ -287,7 +287,7 @@ describe("company web address (mail.<domain>)", () => {
       requestContext: { authorizer: { jwt: { claims: { sub: "sub-ceo", username: "ceo@zetca.pro" }, scopes: [] } } } } as unknown as APIGatewayProxyEventV2WithJWTAuthorizer);
     return { status: r.statusCode!, body: JSON.parse(r.body as string) };
   };
-  beforeEach(() => { created = []; disabled = []; status = { active: false, certificate: "pending-validation" }; });
+  beforeEach(() => { created = []; disabled = []; status = { active: false, certificate: "pending-validation", attached: false }; });
 
   it("lists the optional mail CNAME with the other records, and sets it up only once verified and in place", async () => {
     table({ "DOMAIN#zetca.pro|META": d }); ddb.on(UpdateCommand).resolves({}); ddb.on(PutCommand).resolves({});
@@ -328,7 +328,7 @@ describe("company web address (mail.<domain>)", () => {
     table({ "DOMAIN#zetca.pro|META": { ...d, webHost } }); ddb.on(UpdateCommand).resolves({}); ddb.on(PutCommand).resolves({});
     ses.on(GetEmailIdentityCommand).resolves({ DkimAttributes: { Status: "SUCCESS" } });
     zone = { ...verifiedZone("t"), cname: { "mail.zetca.pro": ["d111.cloudfront.net."] } } as typeof zone;
-    status = { active: true, certificate: "issued" };
+    status = { active: true, certificate: "issued", attached: true };
     const r = await webCall("POST /v1/domains/{domain}/check");
     expect(r.body.web).toMatchObject({ dns: true, certificate: "issued", status: "active" });
     const mails = await Promise.all(ses.commandCalls(SendEmailCommand).map(c => sentEmail(c.args[0].input)));

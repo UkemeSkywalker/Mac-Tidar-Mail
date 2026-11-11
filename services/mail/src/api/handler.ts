@@ -359,6 +359,17 @@ export function createHandler({ ddb, s3, ses, config, account, users, webHosts, 
       }
       start = page.LastEvaluatedKey;
     } while (start);
+    // Verified domains whose web address is being set up: follow it here too, so its "ready" email
+    // arrives within minutes instead of at the next daily check.
+    start = undefined;
+    do {
+      const page: QueryCommandOutput = await ddb.send(new QueryCommand({ TableName: T, IndexName: "gsi2", KeyConditionExpression: "gsi2pk = :d", ExpressionAttributeValues: { ":d": ALL_DOMAINS }, ExclusiveStartKey: start }));
+      for (const d of (page.Items ?? []) as DomainItem[]) {
+        if (!d.webHost || d.webHost.status === "active") continue;
+        try { await refreshWebHost(d); } catch (e) { counts.failed++; console.error(JSON.stringify({ event: "web-host-check-failed", name: (e as Error).name, message: (e as Error).message?.slice(0, 300) })); }
+      }
+      start = page.LastEvaluatedKey;
+    } while (start);
     console.log(JSON.stringify({ event: "claims-checked", ...counts }));
     return counts;
   }
