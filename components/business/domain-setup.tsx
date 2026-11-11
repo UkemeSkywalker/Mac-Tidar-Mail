@@ -81,8 +81,13 @@ export function DomainSetup({ d, onChange, onRemoved }: { d: DomainView; onChang
     onChange(next);
     if (next.status === "active" && d.status === "pending") setNote("Verified! Your domain is live.");
     else if (next.status === "pending") {
-      const missing = next.records.filter(r => REQUIRED.includes(r.check) && !next.checks[r.check]).map(r => r.purpose);
-      setNote(`Not yet: ${[...new Set(missing)].join(", ")} ${missing.length === 1 ? "isn’t" : "aren’t"} showing up. If you just added ${missing.length === 1 ? "it" : "them"}, DNS changes can take from a few minutes to a few hours to appear.`);
+      // Records we read straight from the domain's own nameservers, so this is what's really there.
+      const missing = [...new Set(next.records.filter(r => REQUIRED.includes(r.check) && !next.checks[r.check] && !(r.check === "dkim" && next.checks.dkimRecords)).map(r => r.purpose === "DKIM" ? "the 3 DKIM records" : `the ${r.purpose} record`))];
+      const awaitingAmazon = !next.checks.dkim && !!next.checks.dkimRecords;
+      const list = missing.length > 1 ? `${missing.slice(0, -1).join(", ")} and ${missing.at(-1)}` : missing[0];
+      setNote(missing.length
+        ? `Not found yet: ${list}. Check ${missing.length === 1 ? "it was" : "they were"} added exactly as shown; new records usually appear within a few minutes.${awaitingAmazon ? " Your DKIM records are in place and waiting for Amazon to confirm them." : ""}`
+        : "All your records are in place. Amazon is confirming the DKIM records, which usually takes up to an hour; we check every 15 minutes and email you the moment it’s verified.");
     }
   });
   const [label, tone] = STATUS[d.status];
@@ -121,12 +126,17 @@ export function DomainSetup({ d, onChange, onRemoved }: { d: DomainView; onChang
               <thead><tr className="text-left text-m-muted"><th className="py-1 pr-2 font-medium">Type</th><th className="py-1 pr-2 font-medium">Name</th><th className="py-1 pr-2 font-medium">Value</th><th className="py-1 font-medium"><span className="sr-only">Status</span></th></tr></thead>
               <tbody>{d.records.map(r => {
                 const ok = d.checks[r.check], optional = !REQUIRED.includes(r.check);
+                // DKIM: found in DNS, waiting for Amazon SES to confirm it.
+                const waiting = !ok && r.check === "dkim" && !!d.checks.dkimRecords;
                 return (
                   <tr key={r.name + r.value} className="border-t border-m-line align-top">
                     <td className="py-2 pr-2"><span className="t-code text-m-muted whitespace-nowrap">{r.type}</span><span className="block t-label-sm text-m-muted mt-0.5" title={PURPOSE[r.purpose]}>{r.purpose}{optional ? " (recommended)" : ""}</span></td>
                     <td className="py-2 pr-2 min-w-[7rem]"><CopyText text={r.host} /></td>
                     <td className="py-2 pr-2 min-w-[12rem]">{r.priority !== undefined && <span className="t-code text-m-muted">priority {r.priority} · </span>}<CopyText text={r.value} /></td>
-                    <td className="py-2"><Icon name={ok ? "check_circle" : "radio_button_unchecked"} className={`text-[18px] ${ok ? "text-m-success" : "text-m-muted"}`} /><span className="sr-only">{ok ? "Found" : "Not found yet"}</span></td>
+                    <td className="py-2" title={waiting ? "Found. Waiting for Amazon to confirm it (usually within an hour)." : undefined}>
+                      <Icon name={ok ? "check_circle" : waiting ? "hourglass_top" : "radio_button_unchecked"} className={`text-[18px] ${ok ? "text-m-success" : waiting ? "text-m-brand" : "text-m-muted"}`} />
+                      <span className="sr-only">{ok ? "Found" : waiting ? "Found, waiting for Amazon to confirm" : "Not found yet"}</span>
+                    </td>
                   </tr>
                 );
               })}</tbody>

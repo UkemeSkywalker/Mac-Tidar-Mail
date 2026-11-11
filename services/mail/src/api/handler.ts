@@ -9,7 +9,7 @@ import { BatchWriteCommand, DeleteCommand, DynamoDBDocumentClient, GetCommand, t
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyStructuredResultV2 } from "aws-lambda";
 import { normalizeAddress } from "../crypto/keys";
 import { CreateEmailIdentityCommand, DeleteEmailIdentityCommand, GetEmailIdentityCommand, SendEmailCommand, SESv2Client } from "@aws-sdk/client-sesv2";
-import { promises as nodeDns } from "node:dns";
+import { authoritativeResolver, DnsUnavailable } from "../shared/dns";
 import { randomBytes } from "node:crypto";
 import { AdminCreateUserCommand, AdminDeleteUserCommand, AdminGetUserCommand, CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-provider";
 import { draftSk, folderGsi1, mailboxPk, META_SK, ownerGsi1, SETTINGS_SK, type DraftItem, type Folder, type MailboxMeta, type MessageItem, type SettingsItem } from "../shared/table";
@@ -48,7 +48,7 @@ export interface UserAdmin {
 export interface ApiDeps {
   ddb: DynamoDBDocumentClient; s3: S3Client; ses: SESv2Client; config: ApiConfig;
   account: (username: string) => Promise<AccountInfo | null>;
-  /** DNS lookups for domain checks (node:dns by default). */
+  /** DNS lookups for domain checks. By default each domain's own nameservers are asked; tests pass a fixed resolver. */
   dns?: Resolver;
   /** Accounts for people on customer domains. */
   users?: UserAdmin;
@@ -96,10 +96,11 @@ function parseBody(event: Event, maxChars = 600_000): unknown {
   catch { throw new BadRequest("Body must be JSON"); }
 }
 
-export function createHandler({ ddb, s3, ses, config, account, users, dns = nodeDns, presign = (c, cmd) => getSignedUrl(c, cmd, { expiresIn: 300 }),
+export function createHandler({ ddb, s3, ses, config, account, users, dns, presign = (c, cmd) => getSignedUrl(c, cmd, { expiresIn: 300 }),
   presignPost = (c, p) => createPresignedPost(c, { Bucket: p.bucket, Key: p.key, Expires: 300, Fields: { "Content-Type": p.contentType },
     Conditions: [["content-length-range", 1, MAX_LOGO_BYTES], ["eq", "$Content-Type", p.contentType]] }) }: ApiDeps) {
   const T = config.table;
+  const resolverFor = (domain: string): Promise<Resolver> => dns ? Promise.resolve(dns) : authoritativeResolver(domain);
 
   const directory = domainDirectory(ddb, T, config.localDomains);
 
@@ -122,7 +123,7 @@ export function createHandler({ ddb, s3, ses, config, account, users, dns = node
   /** Re-checks a domain's DNS and SES status and saves the result. */
   async function refreshDomain(d: DomainItem): Promise<DomainItem> {
     const identity = await ses.send(new GetEmailIdentityCommand({ EmailIdentity: d.domain }));
-    const checks = await checkDns(d.domain, identity.DkimAttributes?.Status === "SUCCESS", config.region, dns);
+    const checks = await checkDns(d.domain, identity.DkimAttributes?.Status === "SUCCESS", config.region, await resolverFor(d.domain), d.dkimTokens);
     const now = new Date();
     const next: DomainItem = { ...d, ...evaluate(d, checks, now), checks, checkedAt: now.toISOString() };
     if (next.status !== "suspended") delete next.suspendedFor;
@@ -211,7 +212,7 @@ export function createHandler({ ddb, s3, ses, config, account, users, dns = node
   async function winClaim(c: ClaimItem, checks: ClaimChecks): Promise<DomainItem | null> {
     const now = new Date().toISOString();
     const logoKey = c.pendingLogoKey ? await publishLogo(c.domain, c.pendingLogoKey).catch(() => undefined) : undefined;
-    const domainChecks = { dkim: checks.dkim, mx: checks.mx, spf: checks.spf, dmarc: checks.dmarc };
+    const domainChecks = { dkim: checks.dkim, mx: checks.mx, spf: checks.spf, dmarc: checks.dmarc, dkimRecords: checks.dkimRecords };
     const d: DomainItem = { ...domainKey(c.domain), type: "domain", domain: c.domain, ownerSub: c.ownerSub, ownerAddress: c.ownerAddress, displayName: c.displayName,
       status: "active", dkimTokens: c.dkimTokens, checks: domainChecks, createdAt: c.createdAt, checkedAt: now, verifiedAt: now,
       ...(logoKey ? { logoKey } : {}), gsi1pk: domainsGsi1(c.ownerSub), gsi1sk: c.domain, gsi2pk: ALL_DOMAINS, gsi2sk: c.domain };
@@ -257,7 +258,8 @@ export function createHandler({ ddb, s3, ses, config, account, users, dns = node
   async function refreshClaim(c: ClaimItem): Promise<{ claim: ClaimItem } | { domain: DomainItem } | { lost: true }> {
     const identity = await ses.send(new GetEmailIdentityCommand({ EmailIdentity: c.domain })).catch(e => { if ((e as Error).name === "NotFoundException") return null; throw e; });
     if (!identity) c = { ...c, dkimTokens: (await domainIdentity(c.domain)).dkimTokens }; // released and recreated; DKIM starts over
-    const [dnsChecks, ownership] = await Promise.all([checkDns(c.domain, identity?.DkimAttributes?.Status === "SUCCESS", config.region, dns), checkOwnership(c.domain, c.token, dns)]);
+    const r = await resolverFor(c.domain);
+    const [dnsChecks, ownership] = await Promise.all([checkDns(c.domain, identity?.DkimAttributes?.Status === "SUCCESS", config.region, r, c.dkimTokens), checkOwnership(c.domain, c.token, r)]);
     const checks: ClaimChecks = { ...dnsChecks, ownership };
     if (ownership && isReady(checks)) {
       const d = await winClaim(c, checks);
@@ -824,10 +826,16 @@ export function createHandler({ ddb, s3, ses, config, account, users, dns = node
         const checkedAt = "domain" in e ? e.domain.checkedAt : e.claim.checkedAt;
         // DNS and SES lookups cost money and time; one check every 10 seconds is plenty.
         if (checkedAt && Date.now() - Date.parse(checkedAt) < 10_000) return json(200, await publicEntry(e));
-        if ("domain" in e) return json(200, publicDomain(await refreshDomain(e.domain)));
-        const r = await refreshClaim(e.claim);
-        if ("lost" in r) throw new NotFound();
-        return json(200, "domain" in r ? publicDomain(r.domain) : await publicClaim(r.claim));
+        try {
+          if ("domain" in e) return json(200, publicDomain(await refreshDomain(e.domain)));
+          const r = await refreshClaim(e.claim);
+          if ("lost" in r) throw new NotFound();
+          return json(200, "domain" in r ? publicDomain(r.domain) : await publicClaim(r.claim));
+        } catch (err) {
+          // Nothing was saved: the last answers stand rather than being replaced by "not found".
+          if (err instanceof DnsUnavailable) throw new Conflict(`Couldn’t reach the DNS servers for ${err.domain} just now, so nothing changed. Try again in a minute.`);
+          throw err;
+        }
       }
 
       case "PATCH /v1/domains/{domain}": {

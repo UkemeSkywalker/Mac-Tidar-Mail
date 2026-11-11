@@ -47,7 +47,8 @@ export type DomainCheck = "ownership" | "dkim" | "mx" | "spf" | "dmarc";
 /** A connected domain (or one being set up) as its owner sees it (see services/mail/src/shared/domains.ts). */
 export interface DomainView {
   domain: string; displayName: string; status: "pending" | "active" | "suspended"; suspendedFor: "dns" | "abuse" | null;
-  checks: Record<DomainCheck, boolean>;
+  /** `dkimRecords`: the DKIM records are in DNS, though Amazon may not have confirmed them yet (`dkim`). */
+  checks: Record<DomainCheck, boolean> & { dkimRecords?: boolean };
   records: { purpose: string; type: string; name: string; host: string; value: string; priority?: number; check: DomainCheck }[];
   createdAt: string; checkedAt: string | null; verifiedAt: string | null; expiresAt: string | null;
   logoUrl: string | null;
