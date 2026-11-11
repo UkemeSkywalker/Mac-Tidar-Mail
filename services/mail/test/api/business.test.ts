@@ -289,15 +289,38 @@ describe("company web address (mail.<domain>)", () => {
   };
   beforeEach(() => { created = []; disabled = []; status = { active: false, certificate: "pending-validation" }; });
 
-  it("is only offered on a verified domain, and shows the one CNAME to add", async () => {
+  it("lists the optional mail CNAME with the other records, and sets it up only once verified and in place", async () => {
+    table({ "DOMAIN#zetca.pro|META": d }); ddb.on(UpdateCommand).resolves({}); ddb.on(PutCommand).resolves({});
+    ses.on(GetEmailIdentityCommand).resolves({ DkimAttributes: { Status: "SUCCESS" } });
+    zone = verifiedZone("t");
+    // Verified, but no mail CNAME yet: nothing is created, and the record is in the list as optional.
+    let r = await webCall("POST /v1/domains/{domain}/check");
+    expect(created).toEqual([]);
+    expect(r.body.records.at(-1)).toMatchObject({ purpose: "Web address", type: "CNAME", host: "mail", value: "d111.cloudfront.net", check: "web" });
+    expect(r.body.web).toMatchObject({ enabled: false });
+    expect((await webCall("POST /v1/domains/{domain}/web")).body.error).toMatch(/Add the CNAME record for mail\.zetca\.pro first/);
+    // The CNAME appears: the next check sets the web address up by itself (CloudFront needs it in place first).
+    zone = { ...verifiedZone("t"), cname: { "mail.zetca.pro": ["d111.cloudfront.net."] } } as typeof zone;
+    r = await webCall("POST /v1/domains/{domain}/check");
+    expect(created).toEqual(["mail.zetca.pro"]);
+    expect(r.body.web).toMatchObject({ host: "mail.zetca.pro", enabled: true, status: "pending" });
+  });
+
+  it("never sets up a pending domain's web address, even with the CNAME in place", async () => {
     table({ "DOMAIN#zetca.pro|META": { ...d, status: "pending" } });
     expect((await webCall("POST /v1/domains/{domain}/web")).status).toBe(409);
-    table({ "DOMAIN#zetca.pro|META": d }); ddb.on(UpdateCommand).resolves({});
-    const r = await webCall("POST /v1/domains/{domain}/web");
-    expect(r.status).toBe(201);
-    expect(created).toEqual(["mail.zetca.pro"]);
-    expect(r.body.web).toMatchObject({ host: "mail.zetca.pro", enabled: true, status: "pending", record: { type: "CNAME", host: "mail", value: "d111.cloudfront.net" } });
-    expect(ddb.commandCalls(UpdateCommand)[0]!.args[0].input).toMatchObject({ ConditionExpression: "attribute_not_exists(webHost) AND ownerSub = :s" });
+    expect(created).toEqual([]);
+  });
+
+  it("stays off after the owner turns it off, until the CNAME is removed", async () => {
+    table({ "DOMAIN#zetca.pro|META": { ...d, webOff: true } }); ddb.on(UpdateCommand).resolves({}); ddb.on(PutCommand).resolves({});
+    ses.on(GetEmailIdentityCommand).resolves({ DkimAttributes: { Status: "SUCCESS" } });
+    zone = { ...verifiedZone("t"), cname: { "mail.zetca.pro": ["d111.cloudfront.net."] } } as typeof zone;
+    await webCall("POST /v1/domains/{domain}/check");
+    expect(created).toEqual([]);
+    zone = verifiedZone("t");
+    await webCall("POST /v1/domains/{domain}/check");
+    expect(ddb.commandCalls(UpdateCommand).some(c => c.args[0].input.UpdateExpression === "REMOVE webOff")).toBe(true);
   });
 
   it("goes live once the CNAME points at us and the certificate is issued, and tells the owner", async () => {
@@ -319,5 +342,6 @@ describe("company web address (mail.<domain>)", () => {
     expect(r.body.web).toMatchObject({ enabled: false });
     expect(disabled).toEqual(["dt-1"]);
     expect(ddb.commandCalls(PutCommand)[0]!.args[0].input.Item).toMatchObject({ pk: "TENANTPURGE#dt-1", gsi2pk: "TENANTPURGES" });
+    expect(ddb.commandCalls(UpdateCommand).at(-1)!.args[0].input.UpdateExpression).toBe("REMOVE webHost SET webOff = :t");
   });
 });

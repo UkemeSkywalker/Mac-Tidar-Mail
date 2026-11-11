@@ -43,19 +43,19 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 
 const mb = (address: string) => `/v1/mailboxes/${encodeURIComponent(address)}`;
 
-export type DomainCheck = "ownership" | "dkim" | "mx" | "spf" | "dmarc";
+export type DomainCheck = "ownership" | "dkim" | "mx" | "spf" | "dmarc" | "web";
 /** A connected domain (or one being set up) as its owner sees it (see services/mail/src/shared/domains.ts). */
 export interface DomainView {
   domain: string; displayName: string; status: "pending" | "active" | "suspended"; suspendedFor: "dns" | "abuse" | null;
   /** `dkimRecords`: the DKIM records are in DNS, though Amazon may not have confirmed them yet (`dkim`). */
-  checks: Record<DomainCheck, boolean> & { dkimRecords?: boolean };
+  checks: Record<Exclude<DomainCheck, "web">, boolean> & { dkimRecords?: boolean; web?: boolean };
   records: { purpose: string; type: string; name: string; host: string; value: string; priority?: number; check: DomainCheck }[];
   createdAt: string; checkedAt: string | null; verifiedAt: string | null; expiresAt: string | null;
   logoUrl: string | null;
   /** The owner's own sign-in address when it's on this domain (a Business account). */
   ownAddress: string | null;
   /** mail.<domain>: Mac Tidar Mail on the company's own web address (null until the domain is verified). */
-  web: { host: string; enabled: boolean; status: "pending" | "active" | null; dns: boolean; certificate: string | null;
+  web: { host: string; enabled: boolean; /** Turned off by the owner (the record may still be there). */ off: boolean; status: "pending" | "active" | null; dns: boolean; certificate: string | null;
     record: { purpose: string; type: string; name: string; host: string; value: string } } | null;
 }
 

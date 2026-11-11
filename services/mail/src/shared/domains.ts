@@ -24,6 +24,8 @@ export interface DomainChecks {
   dkim: boolean; mx: boolean; spf: boolean; dmarc: boolean;
   /** All three DKIM CNAMEs are in DNS, whether or not SES has confirmed them yet. */
   dkimRecords?: boolean;
+  /** Optional: mail.<domain> points at our CloudFront routing endpoint (the company's own web address). */
+  web?: boolean;
 }
 /** A pending claim also needs its own ownership record, which says *who* controls the DNS. */
 export interface ClaimChecks extends DomainChecks { ownership: boolean }
@@ -48,6 +50,8 @@ export interface DomainItem {
   logoKey?: string;
   /** mail.<domain>: Mac Tidar Mail on the company's own web address, once its owner sets it up. */
   webHost?: import("./webhost").WebHost;
+  /** The owner turned the web address off: don't set it up again while its CNAME is still there. */
+  webOff?: boolean;
   gsi1pk: string; gsi1sk: string;
   /** Every domain shares one gsi2 partition so the daily check can list them all. */
   gsi2pk: typeof ALL_DOMAINS; gsi2sk: string;
@@ -141,8 +145,10 @@ export function parseDisplayName(raw: unknown, domain: string): string {
   return name;
 }
 
-export type RecordPurpose = "Ownership" | "DKIM" | "MX" | "SPF" | "DMARC";
-export interface DnsRecord { purpose: RecordPurpose; type: "CNAME" | "MX" | "TXT"; /** Full name */ name: string; /** Name relative to the domain ("@" for the domain itself) */ host: string; value: string; priority?: number; check: keyof ClaimChecks }
+export type RecordPurpose = "Ownership" | "DKIM" | "MX" | "SPF" | "DMARC" | "Web address";
+export interface DnsRecord { purpose: RecordPurpose; type: "CNAME" | "MX" | "TXT"; /** Full name */ name: string; /** Name relative to the domain ("@" for the domain itself) */ host: string; value: string; priority?: number; check: Exclude<keyof ClaimChecks, "dkimRecords"> }
+/** Records a domain works without: recommended (SPF, DMARC) or optional (the web address). */
+export const OPTIONAL_CHECKS = new Set(["spf", "dmarc", "web"]);
 
 export const ownershipName = (domain: string) => `_mactidar.${domain}`;
 export const ownershipValue = (token: string) => `mactidar-verify=${token}`;
@@ -166,8 +172,11 @@ const GLOBAL_DKIM_REGIONS = new Set(["us-east-1", "us-east-2", "us-west-1", "us-
 /** Where a DKIM token's CNAME must point in `region`. */
 export const dkimTarget = (token: string, region: string) => GLOBAL_DKIM_REGIONS.has(region) ? `${token}.dkim.amazonses.com` : `${token}.dkim.${region}.amazonses.com`;
 
-/** The records the owner adds at their DNS provider. */
-export function dnsRecords(domain: string, dkimTokens: string[], region: string): DnsRecord[] {
+/**
+ * The records the owner adds at their DNS provider. `webTarget` (our CloudFront routing endpoint)
+ * adds the optional mail.<domain> CNAME for the company's own web address.
+ */
+export function dnsRecords(domain: string, dkimTokens: string[], region: string, webTarget?: string): DnsRecord[] {
   const rel = (name: string) => name === domain ? "@" : name.slice(0, -(domain.length + 1));
   const rec = (r: Omit<DnsRecord, "host">): DnsRecord => ({ ...r, host: rel(r.name) });
   return [
@@ -175,6 +184,7 @@ export function dnsRecords(domain: string, dkimTokens: string[], region: string)
     rec({ purpose: "MX", type: "MX", name: domain, value: inboundMx(region), priority: 10, check: "mx" }),
     rec({ purpose: "SPF", type: "TXT", name: domain, value: "v=spf1 include:amazonses.com ~all", check: "spf" }),
     rec({ purpose: "DMARC", type: "TXT", name: `_dmarc.${domain}`, value: "v=DMARC1; p=none", check: "dmarc" }),
+    ...(webTarget ? [rec({ purpose: "Web address", type: "CNAME", name: `mail.${domain}`, value: webTarget, check: "web" })] : []),
   ];
 }
 
@@ -201,8 +211,9 @@ export async function checkDkimRecords(domain: string, tokens: string[], region:
 }
 
 /** Checks DNS for the records we need. DKIM is confirmed by SES, which looks it up itself. */
-export async function checkDns(domain: string, dkimVerified: boolean, region: string, dns: Resolver, dkimTokens: string[] = []): Promise<DomainChecks> {
-  const [mx, txt, dmarc, dkimRecords] = await Promise.all([orEmpty(dns.resolveMx(domain)), orEmpty(dns.resolveTxt(domain)), orEmpty(dns.resolveTxt(`_dmarc.${domain}`)), checkDkimRecords(domain, dkimTokens, region, dns)]);
+export async function checkDns(domain: string, dkimVerified: boolean, region: string, dns: Resolver, dkimTokens: string[] = [], webTarget?: string): Promise<DomainChecks> {
+  const [mx, txt, dmarc, dkimRecords, web] = await Promise.all([orEmpty(dns.resolveMx(domain)), orEmpty(dns.resolveTxt(domain)), orEmpty(dns.resolveTxt(`_dmarc.${domain}`)), checkDkimRecords(domain, dkimTokens, region, dns),
+    webTarget && dns.resolveCname ? orEmpty(dns.resolveCname(`mail.${domain}`)).then(rs => rs.some(v => v.toLowerCase().replace(/\.$/, "") === webTarget.toLowerCase())) : Promise.resolve(undefined)]);
   const want = inboundMx(region);
   const joined = (rs: string[][]) => rs.map(r => r.join("").trim());
   const spf = joined(txt).filter(t => /^v=spf1\b/i.test(t));
@@ -214,6 +225,7 @@ export async function checkDns(domain: string, dkimVerified: boolean, region: st
     spf: spf.length === 1 && /\binclude:amazonses\.com\b/i.test(spf[0]!),
     dmarc: joined(dmarc).some(t => /^v=DMARC1\b/i.test(t)),
     dkimRecords: dkimVerified || dkimRecords,
+    ...(web !== undefined ? { web } : {}),
   };
 }
 
