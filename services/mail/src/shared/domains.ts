@@ -156,12 +156,20 @@ export async function checkOwnership(domain: string, token: string, dns: Resolve
 
 export const inboundMx = (region: string) => `inbound-smtp.${region}.amazonaws.com`;
 
+// Easy DKIM keys live under dkim.amazonses.com in SES's original regions, but under a regional name
+// (dkim.<region>.amazonses.com) in regions launched since. Pointing a CNAME at the wrong one leaves
+// SES with nothing to find ("HOST_NOT_FOUND"), so the domain never verifies.
+const GLOBAL_DKIM_REGIONS = new Set(["us-east-1", "us-east-2", "us-west-1", "us-west-2", "ca-central-1", "eu-west-1", "eu-west-2", "eu-west-3", "eu-central-1", "eu-north-1",
+  "ap-south-1", "ap-northeast-1", "ap-northeast-2", "ap-northeast-3", "ap-southeast-1", "ap-southeast-2", "sa-east-1", "us-gov-west-1"]);
+/** Where a DKIM token's CNAME must point in `region`. */
+export const dkimTarget = (token: string, region: string) => GLOBAL_DKIM_REGIONS.has(region) ? `${token}.dkim.amazonses.com` : `${token}.dkim.${region}.amazonses.com`;
+
 /** The records the owner adds at their DNS provider. */
 export function dnsRecords(domain: string, dkimTokens: string[], region: string): DnsRecord[] {
   const rel = (name: string) => name === domain ? "@" : name.slice(0, -(domain.length + 1));
   const rec = (r: Omit<DnsRecord, "host">): DnsRecord => ({ ...r, host: rel(r.name) });
   return [
-    ...dkimTokens.map(t => rec({ purpose: "DKIM", type: "CNAME", name: `${t}._domainkey.${domain}`, value: `${t}.dkim.amazonses.com`, check: "dkim" })),
+    ...dkimTokens.map(t => rec({ purpose: "DKIM", type: "CNAME", name: `${t}._domainkey.${domain}`, value: dkimTarget(t, region), check: "dkim" })),
     rec({ purpose: "MX", type: "MX", name: domain, value: inboundMx(region), priority: 10, check: "mx" }),
     rec({ purpose: "SPF", type: "TXT", name: domain, value: "v=spf1 include:amazonses.com ~all", check: "spf" }),
     rec({ purpose: "DMARC", type: "TXT", name: `_dmarc.${domain}`, value: "v=DMARC1; p=none", check: "dmarc" }),
@@ -183,16 +191,16 @@ async function orEmpty<T>(p: Promise<T[]>): Promise<T[]> {
 }
 
 /** True when every DKIM CNAME is in DNS and points at its SES key. */
-export async function checkDkimRecords(domain: string, tokens: string[], dns: Resolver): Promise<boolean> {
+export async function checkDkimRecords(domain: string, tokens: string[], region: string, dns: Resolver): Promise<boolean> {
   if (!dns.resolveCname || tokens.length === 0) return false;
   const found = await Promise.all(tokens.map(t => orEmpty(dns.resolveCname!(`${t}._domainkey.${domain}`))
-    .then(rs => rs.some(v => v.toLowerCase().replace(/\.$/, "") === `${t}.dkim.amazonses.com`))));
+    .then(rs => rs.some(v => v.toLowerCase().replace(/\.$/, "") === dkimTarget(t, region)))));
   return found.every(Boolean);
 }
 
 /** Checks DNS for the records we need. DKIM is confirmed by SES, which looks it up itself. */
 export async function checkDns(domain: string, dkimVerified: boolean, region: string, dns: Resolver, dkimTokens: string[] = []): Promise<DomainChecks> {
-  const [mx, txt, dmarc, dkimRecords] = await Promise.all([orEmpty(dns.resolveMx(domain)), orEmpty(dns.resolveTxt(domain)), orEmpty(dns.resolveTxt(`_dmarc.${domain}`)), checkDkimRecords(domain, dkimTokens, dns)]);
+  const [mx, txt, dmarc, dkimRecords] = await Promise.all([orEmpty(dns.resolveMx(domain)), orEmpty(dns.resolveTxt(domain)), orEmpty(dns.resolveTxt(`_dmarc.${domain}`)), checkDkimRecords(domain, dkimTokens, region, dns)]);
   const want = inboundMx(region);
   const joined = (rs: string[][]) => rs.map(r => r.join("").trim());
   const spf = joined(txt).filter(t => /^v=spf1\b/i.test(t));

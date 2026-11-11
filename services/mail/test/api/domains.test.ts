@@ -6,7 +6,7 @@ import { mockClient } from "aws-sdk-client-mock";
 import type { APIGatewayProxyEventV2WithJWTAuthorizer } from "aws-lambda";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createHandler } from "../../src/api/handler";
-import { checkDns, dnsRecords, evaluate, NO_CHECKS, parseDisplayName, parseDomain, type DomainItem, type Resolver } from "../../src/shared/domains";
+import { checkDns, dkimTarget, dnsRecords, evaluate, NO_CHECKS, parseDisplayName, parseDomain, type DomainItem, type Resolver } from "../../src/shared/domains";
 
 const OWN = ["mactidar.com", "beta.mactidar.com"];
 const REGION = "af-south-1";
@@ -49,7 +49,7 @@ describe("DNS records and checks", () => {
   it("lists the records to add, with names relative to the domain", () => {
     const r = dnsRecords("zetca.pro", TOKENS, REGION);
     expect(r.map(x => [x.type, x.host, x.value])).toEqual([
-      ["CNAME", "aaa._domainkey", "aaa.dkim.amazonses.com"], ["CNAME", "bbb._domainkey", "bbb.dkim.amazonses.com"], ["CNAME", "ccc._domainkey", "ccc.dkim.amazonses.com"],
+      ["CNAME", "aaa._domainkey", "aaa.dkim.af-south-1.amazonses.com"], ["CNAME", "bbb._domainkey", "bbb.dkim.af-south-1.amazonses.com"], ["CNAME", "ccc._domainkey", "ccc.dkim.af-south-1.amazonses.com"],
       ["MX", "@", MX], ["TXT", "@", "v=spf1 include:amazonses.com ~all"], ["TXT", "_dmarc", "v=DMARC1; p=none"],
     ]);
     expect(r.find(x => x.type === "MX")!.priority).toBe(10);
@@ -62,8 +62,17 @@ describe("DNS records and checks", () => {
     expect(await checkDns("zetca.pro", false, REGION, fakeDns(z))).toEqual({ dkim: false, mx: false, spf: false, dmarc: true, dkimRecords: false });
     expect(await checkDns("zetca.pro", false, REGION, fakeDns({}))).toEqual({ ...NO_CHECKS, dkimRecords: false });
   });
+  it("points DKIM at the regional SES name in newer regions like af-south-1, where the keys actually are", () => {
+    expect(dkimTarget("aaa", "af-south-1")).toBe("aaa.dkim.af-south-1.amazonses.com");
+    expect(dkimTarget("aaa", "us-east-1")).toBe("aaa.dkim.amazonses.com");
+    expect(dnsRecords("zetca.pro", ["aaa"], "af-south-1")[0]!.value).toBe("aaa.dkim.af-south-1.amazonses.com");
+  });
+  it("doesn't count DKIM records pointing at the wrong (global) name as found", async () => {
+    const dns = { ...fakeDns(goodZone), resolveCname: async (n: string) => [`${n.split(".")[0]}.dkim.amazonses.com.`] };
+    expect(await checkDns("zetca.pro", false, REGION, dns, TOKENS)).toMatchObject({ dkimRecords: false });
+  });
   it("sees the DKIM records before Amazon confirms them", async () => {
-    const cnames: Record<string, string[]> = Object.fromEntries(TOKENS.map(t => [`${t}._domainkey.zetca.pro`, [`${t}.dkim.amazonses.com.`]]));
+    const cnames: Record<string, string[]> = Object.fromEntries(TOKENS.map(t => [`${t}._domainkey.zetca.pro`, [`${t}.dkim.af-south-1.amazonses.com.`]]));
     const dns = { ...fakeDns(goodZone), resolveCname: async (n: string) => { const r = cnames[n]; if (!r) throw Object.assign(new Error("nf"), { code: "ENOTFOUND" }); return r; } };
     expect(await checkDns("zetca.pro", false, REGION, dns, TOKENS)).toMatchObject({ dkim: false, dkimRecords: true, mx: true });
     delete cnames[`ccc._domainkey.zetca.pro`];
@@ -126,7 +135,7 @@ describe("connecting a domain", () => {
     ses.on(GetEmailIdentityCommand).resolves({ DkimAttributes: { Tokens: TOKENS, Status: "PENDING" } }); ses.on(SendEmailCommand).resolves({});
     const r = await call("POST /v1/domains", { body: { domain: "zetca.pro" } });
     expect(r.status).toBe(201);
-    expect(r.body.records.filter((x: { type: string }) => x.type === "CNAME").map((x: { value: string }) => x.value)).toEqual(TOKENS.map(t => `${t}.dkim.amazonses.com`));
+    expect(r.body.records.filter((x: { type: string }) => x.type === "CNAME").map((x: { value: string }) => x.value)).toEqual(TOKENS.map(t => `${t}.dkim.af-south-1.amazonses.com`));
   });
   it("enforces the limit and refuses a verified domain or a second claim of your own", async () => {
     ddb.on(QueryCommand).resolves({ Count: 2 });
