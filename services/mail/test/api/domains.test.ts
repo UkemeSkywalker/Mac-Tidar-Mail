@@ -55,12 +55,23 @@ describe("DNS records and checks", () => {
     expect(r.find(x => x.type === "MX")!.priority).toBe(10);
   });
   it("passes a correct zone", async () => {
-    expect(await checkDns("zetca.pro", true, REGION, fakeDns(goodZone))).toEqual({ dkim: true, mx: true, spf: true, dmarc: true });
+    expect(await checkDns("zetca.pro", true, REGION, fakeDns(goodZone))).toEqual({ dkim: true, mx: true, spf: true, dmarc: true, dkimRecords: true });
   });
   it("fails an MX that still sends some mail elsewhere, two SPF records, and missing records", async () => {
     const z = { ...goodZone, mx: { "zetca.pro": [{ exchange: MX, priority: 10 }, { exchange: "mx.old-host.com", priority: 20 }] }, txt: { ...goodZone.txt, "zetca.pro": [["v=spf1 include:amazonses.com ~all"], ["v=spf1 include:_spf.google.com ~all"]] } };
-    expect(await checkDns("zetca.pro", false, REGION, fakeDns(z))).toEqual({ dkim: false, mx: false, spf: false, dmarc: true });
-    expect(await checkDns("zetca.pro", false, REGION, fakeDns({}))).toEqual(NO_CHECKS);
+    expect(await checkDns("zetca.pro", false, REGION, fakeDns(z))).toEqual({ dkim: false, mx: false, spf: false, dmarc: true, dkimRecords: false });
+    expect(await checkDns("zetca.pro", false, REGION, fakeDns({}))).toEqual({ ...NO_CHECKS, dkimRecords: false });
+  });
+  it("sees the DKIM records before Amazon confirms them", async () => {
+    const cnames: Record<string, string[]> = Object.fromEntries(TOKENS.map(t => [`${t}._domainkey.zetca.pro`, [`${t}.dkim.amazonses.com.`]]));
+    const dns = { ...fakeDns(goodZone), resolveCname: async (n: string) => { const r = cnames[n]; if (!r) throw Object.assign(new Error("nf"), { code: "ENOTFOUND" }); return r; } };
+    expect(await checkDns("zetca.pro", false, REGION, dns, TOKENS)).toMatchObject({ dkim: false, dkimRecords: true, mx: true });
+    delete cnames[`ccc._domainkey.zetca.pro`];
+    expect(await checkDns("zetca.pro", false, REGION, dns, TOKENS)).toMatchObject({ dkim: false, dkimRecords: false });
+  });
+  it("throws on a failed lookup instead of reporting the record missing", async () => {
+    const flaky = { ...fakeDns(goodZone), resolveMx: async () => { throw Object.assign(new Error("timeout"), { code: "ETIMEOUT" }); } };
+    await expect(checkDns("zetca.pro", true, REGION, flaky)).rejects.toThrow("timeout");
   });
   it("activates once DKIM and MX pass, suspends when they go, and never lifts an abuse pause", () => {
     const now = new Date("2026-11-07T10:00:00Z"), ready = { dkim: true, mx: true, spf: false, dmarc: false };

@@ -19,7 +19,12 @@ export const REMIND_AFTER_MS = 86400_000;
 export const WARN_AFTER_MS = 2 * 86400_000;
 
 export type DomainStatus = "pending" | "active" | "suspended";
-export interface DomainChecks { dkim: boolean; mx: boolean; spf: boolean; dmarc: boolean }
+export interface DomainChecks {
+  /** Amazon SES has verified the DKIM keys (it re-checks DNS on its own schedule). */
+  dkim: boolean; mx: boolean; spf: boolean; dmarc: boolean;
+  /** All three DKIM CNAMEs are in DNS, whether or not SES has confirmed them yet. */
+  dkimRecords?: boolean;
+}
 /** A pending claim also needs its own ownership record, which says *who* controls the DNS. */
 export interface ClaimChecks extends DomainChecks { ownership: boolean }
 
@@ -167,16 +172,27 @@ export function dnsRecords(domain: string, dkimTokens: string[], region: string)
 export interface Resolver {
   resolveMx(name: string): Promise<{ exchange: string; priority: number }[]>;
   resolveTxt(name: string): Promise<string[][]>;
+  resolveCname?(name: string): Promise<string[]>;
 }
 
-const NO_RECORD = new Set(["ENOTFOUND", "ENODATA", "ESERVFAIL", "ETIMEOUT", "ECONNREFUSED", "EREFUSED"]);
+// Only real "no such record" answers count as missing. A timeout or server failure is thrown, so a
+// flaky lookup can't untick a record or suspend a working domain.
+const NO_RECORD = new Set(["ENOTFOUND", "ENODATA", "ENONAME", "NXDOMAIN"]);
 async function orEmpty<T>(p: Promise<T[]>): Promise<T[]> {
   try { return await p; } catch (e) { if (NO_RECORD.has((e as { code?: string }).code ?? "")) return []; throw e; }
 }
 
-/** Checks DNS for the records we need. DKIM comes from SES, which looks it up itself. */
-export async function checkDns(domain: string, dkimVerified: boolean, region: string, dns: Resolver): Promise<DomainChecks> {
-  const [mx, txt, dmarc] = await Promise.all([orEmpty(dns.resolveMx(domain)), orEmpty(dns.resolveTxt(domain)), orEmpty(dns.resolveTxt(`_dmarc.${domain}`))]);
+/** True when every DKIM CNAME is in DNS and points at its SES key. */
+export async function checkDkimRecords(domain: string, tokens: string[], dns: Resolver): Promise<boolean> {
+  if (!dns.resolveCname || tokens.length === 0) return false;
+  const found = await Promise.all(tokens.map(t => orEmpty(dns.resolveCname!(`${t}._domainkey.${domain}`))
+    .then(rs => rs.some(v => v.toLowerCase().replace(/\.$/, "") === `${t}.dkim.amazonses.com`))));
+  return found.every(Boolean);
+}
+
+/** Checks DNS for the records we need. DKIM is confirmed by SES, which looks it up itself. */
+export async function checkDns(domain: string, dkimVerified: boolean, region: string, dns: Resolver, dkimTokens: string[] = []): Promise<DomainChecks> {
+  const [mx, txt, dmarc, dkimRecords] = await Promise.all([orEmpty(dns.resolveMx(domain)), orEmpty(dns.resolveTxt(domain)), orEmpty(dns.resolveTxt(`_dmarc.${domain}`)), checkDkimRecords(domain, dkimTokens, dns)]);
   const want = inboundMx(region);
   const joined = (rs: string[][]) => rs.map(r => r.join("").trim());
   const spf = joined(txt).filter(t => /^v=spf1\b/i.test(t));
@@ -187,6 +203,7 @@ export async function checkDns(domain: string, dkimVerified: boolean, region: st
     // Exactly one SPF record is allowed; two make SPF fail everywhere.
     spf: spf.length === 1 && /\binclude:amazonses\.com\b/i.test(spf[0]!),
     dmarc: joined(dmarc).some(t => /^v=DMARC1\b/i.test(t)),
+    dkimRecords: dkimVerified || dkimRecords,
   };
 }
 
