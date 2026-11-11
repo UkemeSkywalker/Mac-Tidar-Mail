@@ -115,6 +115,9 @@ export function DomainSetup({ d, onChange, onRemoved }: { d: DomainView; onChang
         <Btn tone="brand" onClick={verify} disabled={!!busy}>{busy === "verify" ? "Checking…" : "Verify now"}</Btn>
         {live && <Btn onClick={() => setShowRecords(!showRecords)}>{showRecords ? "Hide DNS records" : "Show DNS records"}</Btn>}
         {d.status === "active" && d.ownAddress && <a href="/app/" className="px-3 py-2 rounded-m-lg t-headline-sm bg-m-low text-m-text hover:bg-m-mid inline-flex items-center gap-1.5"><Icon name="inbox" className="text-[18px]" />Open your mailbox</a>}
+        {d.web && !d.web.enabled && <Btn disabled={!!busy} onClick={() => void act("web", async () => onChange(await mailApi.enableWeb(d.domain)))}>
+          <span className="inline-flex items-center gap-1.5" title={`Let your team open their mail at ${d.web.host}, with your logo from the first screen.`}><Icon name="language" className="text-[18px]" />{busy === "web" ? "Setting up…" : `Set up ${d.web.host}`}</span>
+        </Btn>}
       </div>
       {note && <p className="t-body-sm text-m-text bg-m-low rounded-m-lg px-3 py-2" role="status">{note}</p>}
       {error && <p className="t-body-sm text-m-error" role="alert">{error}</p>}
@@ -166,7 +169,7 @@ export function DomainSetup({ d, onChange, onRemoved }: { d: DomainView; onChang
         )}
       </Section>
 
-      {d.web && <WebAddress d={d} onChange={onChange} />}
+      {d.web?.enabled && <WebAddress d={d} onChange={onChange} />}
 
       <Section title="Team" icon="group">
         {d.status === "pending"
@@ -194,10 +197,7 @@ function WebAddress({ d, onChange }: { d: DomainView; onChange: (d: DomainView) 
   const steps: [boolean, string][] = [[w.dns, `CNAME added: mail → ${w.record.value}`], [certReady, "Secure (HTTPS) certificate issued"], [w.status === "active", `${w.host} is live`]];
   return (
     <Section title="Web address" icon="language" aside={w.status === "active" ? <span className="px-2.5 py-1 rounded-m-pill t-label-sm font-semibold bg-m-success/15 text-m-success">Live</span> : undefined}>
-      {!w.enabled ? <>
-        <p className="t-body-sm text-m-muted">Let your team open their mail at <b className="text-m-text">{w.host}</b>, with your logo from the first screen. It takes one more DNS record; mail.mactidar.com keeps working too.</p>
-        <Btn tone="brand" disabled={busy} onClick={() => void act(async () => onChange(await mailApi.enableWeb(d.domain)))}>{busy ? "Setting up…" : `Set up ${w.host}`}</Btn>
-      </> : <>
+      <>
         {w.status === "active"
           ? <p className="t-body-sm text-m-text">Your team can sign in at <b>{w.host}</b>.</p>
           : <p className="t-body-sm text-m-muted">Add this record where you manage DNS for {d.domain}. Once it’s in place, the secure certificate is issued automatically, usually within 30 minutes. If <span className="t-code">mail.{d.domain}</span> already has a record, replace it.</p>}
@@ -213,7 +213,7 @@ function WebAddress({ d, onChange }: { d: DomainView; onChange: (d: DomainView) 
           <Btn tone="danger" disabled={busy} onClick={() => { if (confirm(`Turn off ${w.host}? Your team can still sign in at mail.mactidar.com.`)) void act(async () => onChange(await mailApi.disableWeb(d.domain))); }}>Turn off</Btn>
         </div>
         <p className="t-label-sm text-m-muted">Use Verify now above to re-check.</p>
-      </>}
+      </>
       {error && <p className="t-body-sm text-m-error" role="alert">{error}</p>}
     </Section>
   );
