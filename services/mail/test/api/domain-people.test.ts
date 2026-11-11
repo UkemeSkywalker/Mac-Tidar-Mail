@@ -142,11 +142,16 @@ describe("invite trigger", () => {
     const e = { triggerSource: "CustomMessage_AdminCreateUser", userName: "ana@zetca.pro", request: { codeParameter: "{####}", usernameParameter: "{username}", userAttributes: {} }, response: {} } as unknown as CustomMessageTriggerEvent;
     const r = await auth()(e) as CustomMessageTriggerEvent;
     expect(r.response.emailSubject).toBe("You’ve been added to Zetca & Co’s email");
-    expect(r.response.emailMessage).toContain("Zetca &amp; Co has given you");
+    expect(r.response.emailMessage).toContain("Zetca &amp; Co");
+    expect(r.response.emailMessage).toContain("has given you an email address");
+    expect(r.response.emailMessage!.length).toBeLessThan(20000); // Cognito's limit
     expect(r.response.emailMessage).toContain("{####}");
     expect(r.response.emailMessage).toContain("{username}");
     const other = { ...e, triggerSource: "CustomMessage_ForgotPassword", response: {} } as unknown as CustomMessageTriggerEvent;
-    expect((await auth()(other) as CustomMessageTriggerEvent).response.emailMessage).toBeUndefined();
+    const reset = (await auth()(other) as CustomMessageTriggerEvent).response;
+    expect(reset.emailSubject).toBe("Reset your Mac Tidar Mail password");
+    expect(reset.emailMessage).toContain("{####}");
+    expect(reset.emailMessage).toContain("Zetca &amp; Co"); // an employee's reset carries their company's brand
   });
 });
 
